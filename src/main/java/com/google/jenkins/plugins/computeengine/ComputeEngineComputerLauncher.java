@@ -430,11 +430,11 @@ public abstract class ComputeEngineComputerLauncher extends ComputerLauncher {
         }
 
         conn.connect(
-          (hostname, portNum, serverHostKeyAlgorithm, serverHostKey) ->
+          /*(hostname, portNum, serverHostKeyAlgorithm, serverHostKey) ->
                 verifyServerHostKey(
                     client, computer, listener, instance, serverHostKeyAlgorithm, serverHostKey),
             SSH_TIMEOUT_MILLIS,
-            SSH_TIMEOUT_MILLIS);
+            SSH_TIMEOUT_MILLIS*/);
         logInfo(computer, listener, "Connected via SSH.");
         return conn;
       } catch (IOException e) {
