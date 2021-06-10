@@ -282,8 +282,16 @@ public abstract class ComputeEngineComputerLauncher extends ComputerLauncher {
     scp.put(Jenkins.get().getJnlpJars(AGENT_JAR).readFully(), AGENT_JAR, jenkinsDir);
   }
 
+  private String getJenkinsAgentPath(String jenkinsDir) {
+    return String.format("%s%s%s", jenkinsDir, getPathSeparator(), AGENT_JAR);
+  }
+
   private String getJavaLaunchString(String javaExecPath, String jenkinsDir) {
-    return String.format("%s -jar %s%s%s", javaExecPath, jenkinsDir, getPathSeparator(), AGENT_JAR);
+    return String.format("%s -jar %s", javaExecPath, getJenkinsAgentPath(jenkinsDir));
+  }
+
+  private String formatCustomLaunchString(String formatString, String jenkinsDir) {
+    return String.format(formatString, getJenkinsAgentPath(jenkinsDir));
   }
 
   private void launch(ComputeEngineComputer computer, TaskListener listener) {
@@ -303,13 +311,25 @@ public abstract class ComputeEngineComputerLauncher extends ComputerLauncher {
         return;
       }
       conn = cleanupConn.get();
-      String javaExecPath = node.getJavaExecPathOrDefault();
-      if (!checkJavaInstalled(computer, conn, logger, listener, javaExecPath)) {
-        return;
-      }
+
       String jenkinsDir = node.getRemoteFS();
       copyAgentJar(computer, conn, listener, jenkinsDir);
-      String launchString = getJavaLaunchString(javaExecPath, jenkinsDir);
+
+      String customLaunchString = node.getCustomLaunchString();
+      String launchString = "";
+
+      if (customLaunchString != "") {
+        launchString = formatCustomLaunchString(customLaunchString, jenkinsDir);
+      } else {
+        String javaExecPath = node.getJavaExecPathOrDefault();
+
+        if (!checkJavaInstalled(computer, conn, logger, listener, javaExecPath)) {
+          return;
+        }
+
+        launchString = getJavaLaunchString(javaExecPath, jenkinsDir);
+      }
+
       logInfo(computer, listener, "Launching Jenkins agent via plugin SSH: " + launchString);
       final Session sess = conn.openSession();
       sess.execCommand(launchString);
@@ -410,7 +430,7 @@ public abstract class ComputeEngineComputerLauncher extends ComputerLauncher {
         }
 
         conn.connect(
-            (hostname, portNum, serverHostKeyAlgorithm, serverHostKey) ->
+          (hostname, portNum, serverHostKeyAlgorithm, serverHostKey) ->
                 verifyServerHostKey(
                     client, computer, listener, instance, serverHostKeyAlgorithm, serverHostKey),
             SSH_TIMEOUT_MILLIS,

@@ -17,6 +17,7 @@ jenkins:
             runAsUser:          jenkins
             remoteFs:           agent
             javaExecPath:       "java"
+            customLaunchString: ""
             oneShot:            true
             createSnapshot:     false
             region:             "https://www.googleapis.com/compute/v1/projects/gce-jenkins/regions/europe-west1"

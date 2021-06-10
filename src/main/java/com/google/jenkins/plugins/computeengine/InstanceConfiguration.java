@@ -148,6 +148,7 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
   private boolean createSnapshot;
   private String remoteFs;
   private String javaExecPath;
+  private String customLaunchString;
   private GoogleKeyPair sshKeyPair;
   private Map<String, String> googleLabels;
   private Integer numExecutors;
@@ -341,6 +342,7 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
           .retentionStrategy(new ComputeEngineRetentionStrategy(retentionTimeMinutes, oneShot))
           .launchTimeout(getLaunchTimeoutMillis())
           .javaExecPath(javaExecPath)
+          .customLaunchString(customLaunchString)
           .sshKeyPair(sshKeyPair)
           .build();
     } catch (Descriptor.FormException fe) {
@@ -974,6 +976,7 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
       instanceConfiguration.setCreateSnapshot(this.createSnapshot);
       instanceConfiguration.setRemoteFs(this.remoteFs);
       instanceConfiguration.setJavaExecPath(this.javaExecPath);
+      instanceConfiguration.setCustomLaunchString(this.customLaunchString);
       instanceConfiguration.setCloud(this.cloud);
       if (googleLabels != null) {
         instanceConfiguration.appendLabels(this.googleLabels);
