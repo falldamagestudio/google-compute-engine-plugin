@@ -23,12 +23,14 @@ import com.cloudbees.plugins.credentials.CredentialsProvider;
 import com.cloudbees.plugins.credentials.common.StandardCredentials;
 import com.cloudbees.plugins.credentials.common.StandardListBoxModel;
 import com.cloudbees.plugins.credentials.domains.DomainRequirement;
+import com.google.api.services.compute.Compute;
 import com.google.api.services.compute.model.Instance;
 import com.google.cloud.graphite.platforms.plugin.client.ClientFactory;
 import com.google.cloud.graphite.platforms.plugin.client.ComputeClient;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableMap;
 import com.google.jenkins.plugins.computeengine.client.ClientUtil;
+import com.google.jenkins.plugins.computeengine.client.ComputeFactory;
 import com.google.jenkins.plugins.credentials.oauth.GoogleOAuth2Credentials;
 import hudson.Extension;
 import hudson.model.Computer;
@@ -91,6 +93,7 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
   private List<InstanceConfiguration> configurations;
 
   private transient volatile ComputeClient client;
+  private transient volatile Compute compute;
   private boolean noDelayProvisioning;
 
   @DataBoundConstructor
@@ -196,6 +199,17 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
     }
   }
 
+  public Compute createCompute() {
+    try {
+      ComputeFactory computeFactory = ClientUtil.getComputeFactory(Jenkins.get(), credentialsId);
+      return computeFactory.compute();
+    } catch (IOException e) {
+      log.log(Level.SEVERE, "Exception when creating GCE compute", e);
+      // TODO: https://github.com/jenkinsci/google-compute-engine-plugin/issues/62
+      return null;
+    }
+  }
+
   /**
    * Returns GCP client for that cloud.
    *
@@ -210,6 +224,22 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
       }
     }
     return client;
+  }
+
+  /**
+   * Returns GCP compute for that cloud.
+   *
+   * @return GCP compute object.
+   */
+  public Compute getCompute() {
+    if (compute == null) {
+      synchronized (this) {
+        if (compute == null) {
+          compute = createCompute();
+        }
+      }
+    }
+    return compute;
   }
 
   /**

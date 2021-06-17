@@ -16,6 +16,8 @@
 
 package com.google.jenkins.plugins.computeengine;
 
+import com.google.api.services.compute.Compute;
+import com.google.api.services.compute.model.Operation;
 import com.google.cloud.graphite.platforms.plugin.client.ComputeClient.OperationException;
 import com.google.common.base.Strings;
 import com.google.jenkins.plugins.computeengine.ssh.GoogleKeyPair;
@@ -113,6 +115,21 @@ public class ComputeEngineInstance extends AbstractCloudSlave {
     return new ComputeEngineComputer(this);
   }
 
+  protected void stop(TaskListener listener, String project, String zone, String name) {
+    try {
+      ComputeEngineCloud cloud = getCloud();
+      Compute compute = cloud.getCompute();
+
+      Compute.Instances.Stop request = compute.instances().stop(project, zone, name);
+      Operation response = request.execute();
+
+      // TODO: Change code below to process the `response` object:
+      LOGGER.log(Level.INFO, "Stop response: " + response);
+    } catch (IOException e) {
+      listener.error(e.getMessage());
+    }
+  }
+
   @Override
   protected void _terminate(TaskListener listener) throws IOException, InterruptedException {
     try {
@@ -134,9 +151,12 @@ public class ComputeEngineInstance extends AbstractCloudSlave {
                 cloud.getProjectId(), this.zone, this.getNodeName(), createSnapshotTimeout);
       }
 
+      // Don't delete the instance, just stop it.
+      stop(listener, cloud.getProjectId(), zone, name);
+
       // If the instance is running, attempt to terminate it. This is an async call and we
       // return immediately, hoping for the best.
-      cloud.getClient().terminateInstanceAsync(cloud.getProjectId(), zone, name);
+      // cloud.getClient().terminateInstanceAsync(cloud.getProjectId(), zone, name);
     } catch (CloudNotFoundException cnfe) {
       listener.error(cnfe.getMessage());
     } catch (OperationException oe) {
