@@ -16,6 +16,7 @@
 
 package com.google.jenkins.plugins.computeengine;
 
+import static java.util.Collections.emptyList;
 import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
 
 import com.cloudbees.plugins.credentials.CredentialsMatchers;
@@ -39,6 +40,7 @@ import hudson.model.Item;
 import hudson.model.Job;
 import hudson.model.Label;
 import hudson.model.Node;
+import hudson.model.Slave;
 import hudson.model.TaskListener;
 import hudson.security.ACL;
 import hudson.security.Permission;
@@ -55,6 +57,7 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -267,6 +270,55 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
     readResolve();
   }
 
+  private Set<String> findLocalInstances(ComputeEngineCloud cloud) {
+    return Jenkins.get().getNodes().stream()
+        .filter(node -> node instanceof ComputeEngineInstance)
+        .map(node -> (ComputeEngineInstance) node)
+        .filter(node -> node.getCloud().equals(cloud))
+        .map(Slave::getNodeName)
+        .collect(Collectors.toSet());
+  }
+
+  private List<Instance> findTerminatedRemoteInstances(ComputeEngineCloud cloud) {
+    Map<String, String> filterLabel = ImmutableMap.of(CLOUD_ID_LABEL_KEY, cloud.getInstanceId());
+    try {
+      return cloud.getClient().listInstancesWithLabel(cloud.getProjectId(), filterLabel).stream()
+          .filter(instance -> instance.getStatus().equals("TERMINATED"))
+          .collect(Collectors.toList());
+    } catch (IOException ex) {
+      log.log(Level.WARNING, "Error finding remote instances", ex);
+      return emptyList();
+    }
+  }
+
+  private List<Instance> findAvailableRemoteInstances(ComputeEngineCloud cloud) {
+    List<Instance> terminatedRemoteInstances = findTerminatedRemoteInstances(cloud);
+    Set<String> localInstances = findLocalInstances(cloud);
+
+    for (Instance instance : terminatedRemoteInstances) {
+      log.log(Level.INFO, "Terminated remote instance: " + instance.getName());
+    }
+
+    for (String instanceName : localInstances) {
+      log.log(Level.INFO, "Local instance: " + instanceName);
+    }
+
+    List<Instance> availableRemoteInstances =
+        terminatedRemoteInstances.stream()
+            .filter(remote -> !localInstances.contains(remote.getName()))
+            .collect(Collectors.toList());
+    return availableRemoteInstances;
+  }
+
+  private Instance getAvailableRemoteInstance() {
+    List<Instance> availableRemoteInstances = findAvailableRemoteInstances(this);
+    if (!availableRemoteInstances.isEmpty()) {
+      return availableRemoteInstances.iterator().next();
+    } else {
+      return null;
+    }
+  }
+
   @Override
   public Collection<PlannedNode> provision(Label label, int excessWorkload) {
     List<PlannedNode> result = new ArrayList<>();
@@ -293,7 +345,9 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
 
         InstanceConfiguration config = chooseConfigFromList(configs);
 
-        final ComputeEngineInstance node = config.provision();
+        Instance instance = getAvailableRemoteInstance();
+
+        final ComputeEngineInstance node = config.provision(instance);
         Jenkins.get().addNode(node);
         result.add(createPlannedNode(config, node));
         excessWorkload -= node.getNumExecutors();
@@ -462,7 +516,9 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
       throw HttpResponses.error(SC_BAD_REQUEST, "No such Instance Configuration: " + configuration);
     }
 
-    ComputeEngineInstance node = c.provision();
+    Instance instance = getAvailableRemoteInstance();
+
+    ComputeEngineInstance node = c.provision(instance);
     if (node == null) throw HttpResponses.error(SC_BAD_REQUEST, "Could not provision new node.");
     Jenkins.get().addNode(node);
 

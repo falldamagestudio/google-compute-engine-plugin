@@ -429,12 +429,11 @@ public abstract class ComputeEngineComputerLauncher extends ComputerLauncher {
           logInfo(computer, listener, "Using HTTP Proxy Configuration");
         }
 
-        conn.connect(
-          /*(hostname, portNum, serverHostKeyAlgorithm, serverHostKey) ->
+        conn.connect(/*(hostname, portNum, serverHostKeyAlgorithm, serverHostKey) ->
                 verifyServerHostKey(
                     client, computer, listener, instance, serverHostKeyAlgorithm, serverHostKey),
             SSH_TIMEOUT_MILLIS,
-            SSH_TIMEOUT_MILLIS*/);
+            SSH_TIMEOUT_MILLIS*/ );
         logInfo(computer, listener, "Connected via SSH.");
         return conn;
       } catch (IOException e) {

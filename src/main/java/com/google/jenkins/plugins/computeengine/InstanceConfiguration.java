@@ -19,6 +19,7 @@ package com.google.jenkins.plugins.computeengine;
 import static com.google.cloud.graphite.platforms.plugin.client.util.ClientUtil.nameFromSelfLink;
 import static com.google.jenkins.plugins.computeengine.ComputeEngineCloud.checkPermissions;
 
+import com.google.api.services.compute.Compute;
 import com.google.api.services.compute.model.AcceleratorConfig;
 import com.google.api.services.compute.model.AccessConfig;
 import com.google.api.services.compute.model.AttachedDisk;
@@ -297,15 +298,27 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
     googleLabels.put(key, value);
   }
 
-  public ComputeEngineInstance provision() throws IOException {
+  public ComputeEngineInstance provision(Instance instance) throws IOException {
     try {
-      Instance instance = instance();
-      // TODO: JENKINS-55285
-      Operation operation =
-          cloud
-              .getClient()
-              .insertInstance(cloud.getProjectId(), Optional.ofNullable(template), instance);
-      log.info("Sent insert request for instance configuration [" + description + "]");
+      Operation operation = null;
+      if (instance == null) {
+        instance = instance();
+        // TODO: JENKINS-55285
+        operation =
+            cloud
+                .getClient()
+                .insertInstance(cloud.getProjectId(), Optional.ofNullable(template), instance);
+        log.info("Sent insert request for instance configuration [" + description + "]");
+      } else {
+        Compute compute = cloud.getCompute();
+        Compute.Instances.Start request =
+            compute
+                .instances()
+                .start(
+                    cloud.getProjectId(), nameFromSelfLink(instance.getZone()), instance.getName());
+        operation = request.execute();
+        log.info("Sent start request for instance [" + instance.getName() + "]");
+      }
       String targetRemoteFs = this.remoteFs;
       ComputeEngineComputerLauncher launcher;
       if (this.windowsConfiguration != null) {
