@@ -16,6 +16,8 @@
 
 package com.google.jenkins.plugins.computeengine;
 
+import static com.google.cloud.graphite.platforms.plugin.client.util.ClientUtil.nameFromSelfLink;
+
 import com.google.api.services.compute.Compute;
 import com.google.api.services.compute.model.Operation;
 import com.google.cloud.graphite.platforms.plugin.client.ComputeClient.OperationException;
@@ -152,7 +154,7 @@ public class ComputeEngineInstance extends AbstractCloudSlave {
       }
 
       // Don't delete the instance, just stop it.
-      stop(listener, cloud.getProjectId(), zone, name);
+      stop(listener, cloud.getProjectId(), nameFromSelfLink(zone), name);
 
       // If the instance is running, attempt to terminate it. This is an async call and we
       // return immediately, hoping for the best.
