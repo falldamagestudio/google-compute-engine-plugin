@@ -22,7 +22,10 @@
             <f:entry title="${%Description}" field="description">
                 <f:textbox/>
             </f:entry>
-            <f:entry title="${%Max number of instances}" field="maxNumInstancesStr">
+            <f:entry title="${%Max number of instances to create}" field="maxNumInstancesToCreateStr">
+                <f:textbox/>
+            </f:entry>
+            <f:entry title="${%Max number of instances to persist}" field="maxNumInstancesToPersistStr">
                 <f:textbox/>
             </f:entry>
             <f:entry title="${%Node Retention Time (minutes)}" field="retentionTimeMinutesStr">

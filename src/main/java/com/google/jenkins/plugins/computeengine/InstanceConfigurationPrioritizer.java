@@ -111,7 +111,7 @@ public class InstanceConfigurationPrioritizer {
         configs.stream()
             .filter(
                 config ->
-                    config.getMaxNumInstances()
+                    config.getMaxNumInstancesToCreate()
                         > filterInstancesForConfig(config, instances.stream()).count())
             .collect(Collectors.toList());
     return configsWithSpareCapacity;

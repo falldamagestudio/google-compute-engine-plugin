@@ -151,13 +151,22 @@ public class InstanceConfigurationPrioritizerTest {
 
     // config1 has spare capacity: max nodes = 1, current nodes = 0
     InstanceConfiguration config1 =
-        InstanceConfiguration.builder().namePrefix(namePrefix1).maxNumInstancesStr("1").build();
+        InstanceConfiguration.builder()
+            .namePrefix(namePrefix1)
+            .maxNumInstancesToCreateStr("1")
+            .build();
     // config2 has no spare capacity: max nodes = 0, current nodes = 1
     InstanceConfiguration config2 =
-        InstanceConfiguration.builder().namePrefix(namePrefix2).maxNumInstancesStr("0").build();
+        InstanceConfiguration.builder()
+            .namePrefix(namePrefix2)
+            .maxNumInstancesToCreateStr("0")
+            .build();
     // config3 has no spare capcity: max nodes = 2, current nodes = 2
     InstanceConfiguration config3 =
-        InstanceConfiguration.builder().namePrefix(namePrefix3).maxNumInstancesStr("2").build();
+        InstanceConfiguration.builder()
+            .namePrefix(namePrefix3)
+            .maxNumInstancesToCreateStr("2")
+            .build();
 
     Instance instance1 = new Instance();
     instance1.setLabels(Collections.singletonMap(CONFIG_LABEL_KEY, namePrefix3));
@@ -190,13 +199,22 @@ public class InstanceConfigurationPrioritizerTest {
 
     // config1 has one provisionable instance: instance1
     InstanceConfiguration config1 =
-        InstanceConfiguration.builder().namePrefix(namePrefix1).maxNumInstancesStr("3").build();
+        InstanceConfiguration.builder()
+            .namePrefix(namePrefix1)
+            .maxNumInstancesToCreateStr("3")
+            .build();
     // config2 has no provisionable instances
     InstanceConfiguration config2 =
-        InstanceConfiguration.builder().namePrefix(namePrefix2).maxNumInstancesStr("3").build();
+        InstanceConfiguration.builder()
+            .namePrefix(namePrefix2)
+            .maxNumInstancesToCreateStr("3")
+            .build();
     // config2 has two provisionable instances: instance2 & instance3
     InstanceConfiguration config3 =
-        InstanceConfiguration.builder().namePrefix(namePrefix3).maxNumInstancesStr("3").build();
+        InstanceConfiguration.builder()
+            .namePrefix(namePrefix3)
+            .maxNumInstancesToCreateStr("3")
+            .build();
 
     Instance instance1 = new Instance();
     instance1.setLabels(Collections.singletonMap(CONFIG_LABEL_KEY, namePrefix1));
@@ -250,13 +268,22 @@ public class InstanceConfigurationPrioritizerTest {
 
     // config1 has no spare capacity: max nodes = 0, current nodes = 1
     InstanceConfiguration config1 =
-        InstanceConfiguration.builder().namePrefix(namePrefix1).maxNumInstancesStr("0").build();
+        InstanceConfiguration.builder()
+            .namePrefix(namePrefix1)
+            .maxNumInstancesToCreateStr("0")
+            .build();
     // config2 has spare capacity: max nodes = 1, current nodes = 0
     InstanceConfiguration config2 =
-        InstanceConfiguration.builder().namePrefix(namePrefix2).maxNumInstancesStr("1").build();
+        InstanceConfiguration.builder()
+            .namePrefix(namePrefix2)
+            .maxNumInstancesToCreateStr("1")
+            .build();
     // config3 has no spare capcity: max nodes = 2, current nodes = 2
     InstanceConfiguration config3 =
-        InstanceConfiguration.builder().namePrefix(namePrefix3).maxNumInstancesStr("2").build();
+        InstanceConfiguration.builder()
+            .namePrefix(namePrefix3)
+            .maxNumInstancesToCreateStr("2")
+            .build();
 
     Instance instance1 = new Instance();
     instance1.setLabels(Collections.singletonMap(CONFIG_LABEL_KEY, namePrefix1));
@@ -294,13 +321,22 @@ public class InstanceConfigurationPrioritizerTest {
 
     // config1 has no spare capacity: max nodes = 0, current nodes = 0
     InstanceConfiguration config1 =
-        InstanceConfiguration.builder().namePrefix(namePrefix1).maxNumInstancesStr("0").build();
+        InstanceConfiguration.builder()
+            .namePrefix(namePrefix1)
+            .maxNumInstancesToCreateStr("0")
+            .build();
     // config2 has no spare capacity: max nodes = 1, current nodes = 1
     InstanceConfiguration config2 =
-        InstanceConfiguration.builder().namePrefix(namePrefix2).maxNumInstancesStr("1").build();
+        InstanceConfiguration.builder()
+            .namePrefix(namePrefix2)
+            .maxNumInstancesToCreateStr("1")
+            .build();
     // config3 has no spare capcity: max nodes = 2, current nodes = 2
     InstanceConfiguration config3 =
-        InstanceConfiguration.builder().namePrefix(namePrefix3).maxNumInstancesStr("2").build();
+        InstanceConfiguration.builder()
+            .namePrefix(namePrefix3)
+            .maxNumInstancesToCreateStr("2")
+            .build();
 
     Instance instance1 = new Instance();
     instance1.setLabels(Collections.singletonMap(CONFIG_LABEL_KEY, namePrefix2));

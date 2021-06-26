@@ -19,6 +19,7 @@ package com.google.jenkins.plugins.computeengine;
 import static com.google.cloud.graphite.platforms.plugin.client.util.ClientUtil.nameFromSelfLink;
 
 import com.google.api.services.compute.Compute;
+import com.google.api.services.compute.model.Instance;
 import com.google.api.services.compute.model.Operation;
 import com.google.cloud.graphite.platforms.plugin.client.ComputeClient.OperationException;
 import com.google.common.base.Strings;
@@ -36,6 +37,7 @@ import java.util.Collections;
 import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Stream;
 import javax.annotation.Nullable;
 import jenkins.model.Jenkins;
 import lombok.Builder;
@@ -51,6 +53,7 @@ public class ComputeEngineInstance extends AbstractCloudSlave {
   // TODO: https://issues.jenkins-ci.org/browse/JENKINS-55518
   private final String zone;
   private final String cloudName;
+  private final String instanceConfigurationName;
   private final String sshUser;
   private final WindowsConfiguration windowsConfig;
   private final boolean createSnapshot;
@@ -66,6 +69,7 @@ public class ComputeEngineInstance extends AbstractCloudSlave {
   @Builder
   private ComputeEngineInstance(
       String cloudName,
+      String instanceConfigurationName,
       String name,
       String zone,
       String nodeDescription,
@@ -101,6 +105,7 @@ public class ComputeEngineInstance extends AbstractCloudSlave {
     this.launchTimeout = launchTimeout;
     this.zone = zone;
     this.cloudName = cloudName;
+    this.instanceConfigurationName = instanceConfigurationName;
     this.sshUser = sshUser;
     this.windowsConfig = windowsConfig;
     this.createSnapshot = createSnapshot;
@@ -153,12 +158,52 @@ public class ComputeEngineInstance extends AbstractCloudSlave {
                 cloud.getProjectId(), this.zone, this.getNodeName(), createSnapshotTimeout);
       }
 
-      // Don't delete the instance, just stop it.
-      stop(listener, cloud.getProjectId(), nameFromSelfLink(zone), name);
+      boolean persist = false;
 
-      // If the instance is running, attempt to terminate it. This is an async call and we
-      // return immediately, hoping for the best.
-      // cloud.getClient().terminateInstanceAsync(cloud.getProjectId(), zone, name);
+      // If there is a valid instance configuration,
+      //   and the instance configuration allows persisting the same or more than the current number
+      // of
+      //   instances, choose to persist the current instance
+
+      InstanceConfiguration instanceConfiguration = getInstanceConfiguration();
+      if (instanceConfiguration != null) {
+        Stream<Instance> allInstances = cloud.getAllInstances(cloud);
+        InstanceConfigurationPrioritizer instanceConfigurationPrioritizer =
+            cloud.getInstanceConfigurationPrioritizer();
+        Stream<Instance> instancesForConfig =
+            instanceConfigurationPrioritizer.filterInstancesForConfig(
+                instanceConfiguration, allInstances);
+        int maxNumInstancesToPersist = instanceConfiguration.getMaxNumInstancesToPersist();
+        long numInstancesForConfig = instancesForConfig.count();
+        persist = (maxNumInstancesToPersist >= numInstancesForConfig);
+        LOGGER.log(
+            Level.INFO,
+            "Instance configuration "
+                + instanceConfigurationName
+                + " specifies max "
+                + Integer.toString(maxNumInstancesToPersist)
+                + " instances to persist: there are currently "
+                + Long.toString(numInstancesForConfig)
+                + " for that instance configuration; the instance will "
+                + (persist ? "" : "not ")
+                + "be persisted");
+      } else {
+        LOGGER.log(
+            Level.INFO,
+            "Instance configuration "
+                + instanceConfigurationName
+                + " not found; instance will not be persisted");
+      }
+
+      if (persist) {
+        // Don't delete the instance, just stop it.
+        stop(listener, cloud.getProjectId(), nameFromSelfLink(zone), name);
+      } else {
+        // If the instance is running, attempt to terminate it. This is an async call and we
+        // return immediately, hoping for the best.
+        cloud.getClient().terminateInstanceAsync(cloud.getProjectId(), zone, name);
+      }
+
     } catch (CloudNotFoundException cnfe) {
       listener.error(cnfe.getMessage());
     } catch (OperationException oe) {
@@ -190,6 +235,11 @@ public class ComputeEngineInstance extends AbstractCloudSlave {
       throw new CloudNotFoundException(
           String.format("Could not find cloud %s in Jenkins configuration", cloudName));
     return cloud;
+  }
+
+  public InstanceConfiguration getInstanceConfiguration() {
+    ComputeEngineCloud cloud = getCloud();
+    return cloud.getInstanceConfigurationByName(instanceConfigurationName);
   }
 
   @Extension

@@ -283,7 +283,7 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
 
   // Get all instances associated with a cloud, regardless of their status
 
-  private Stream<Instance> getAllInstances(ComputeEngineCloud cloud) {
+  public Stream<Instance> getAllInstances(ComputeEngineCloud cloud) {
     Map<String, String> filterLabel = ImmutableMap.of(CLOUD_ID_LABEL_KEY, cloud.getInstanceId());
     try {
       return cloud.getClient().listInstancesWithLabel(cloud.getProjectId(), filterLabel).stream();
@@ -514,6 +514,20 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
       return label != null && label.matches(configuration.getLabelSet());
     }
     return false;
+  }
+
+  public InstanceConfigurationPrioritizer getInstanceConfigurationPrioritizer() {
+    return instanceConfigurationPrioritizer;
+  }
+
+  /** Gets {@link InstanceConfiguration} that has the matching Name. */
+  public InstanceConfiguration getInstanceConfigurationByName(String name) {
+    for (InstanceConfiguration c : configurations) {
+      if (c.getNamePrefix().equals(name)) {
+        return c;
+      }
+    }
+    return null;
   }
 
   /** Gets {@link InstanceConfiguration} that has the matching Description. */
