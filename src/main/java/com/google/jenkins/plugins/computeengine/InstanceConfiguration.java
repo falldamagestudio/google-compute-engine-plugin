@@ -90,6 +90,7 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
   public static final String GUEST_ATTRIBUTES_METADATA_KEY = "enable-guest-attributes";
   public static final String SSH_METADATA_KEY = "ssh-keys";
   public static final Long DEFAULT_BOOT_DISK_SIZE_GB = 10L;
+  public static final Integer DEFAULT_MAX_NUM_INSTANCES = 0x7FFFFFFF;
   public static final Integer DEFAULT_NUM_EXECUTORS = 1;
   public static final Integer DEFAULT_LAUNCH_TIMEOUT_SECONDS = 300;
   public static final Integer DEFAULT_RETENTION_TIME_MINUTES =
@@ -121,6 +122,7 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
   private String region;
   private String zone;
   private String machineType;
+  private String maxNumInstancesStr;
   private String numExecutorsStr;
   private String startupScript;
   private boolean preemptible;
@@ -152,6 +154,7 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
   private String customLaunchString;
   private GoogleKeyPair sshKeyPair;
   private Map<String, String> googleLabels;
+  private Integer maxNumInstances;
   private Integer numExecutors;
   private Integer retentionTimeMinutes;
   private Integer launchTimeoutSeconds;
@@ -183,6 +186,12 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
 
   @DataBoundConstructor
   public InstanceConfiguration() {}
+
+  @DataBoundSetter
+  public void setMaxNumInstancesStr(String maxNumInstancesStr) {
+    this.maxNumInstances = intOrDefault(maxNumInstancesStr, DEFAULT_MAX_NUM_INSTANCES);
+    this.maxNumInstancesStr = this.maxNumInstances.toString();
+  }
 
   @DataBoundSetter
   public void setNumExecutorsStr(String numExecutorsStr) {
@@ -278,6 +287,10 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
 
   public String getDisplayName() {
     return description;
+  }
+
+  public int getMaxNumInstances() {
+    return maxNumInstances;
   }
 
   public int getLaunchTimeoutMillis() {
@@ -962,6 +975,7 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
       instanceConfiguration.setRegion(this.region);
       instanceConfiguration.setZone(this.zone);
       instanceConfiguration.setMachineType(this.machineType);
+      instanceConfiguration.setMaxNumInstancesStr(this.maxNumInstancesStr);
       instanceConfiguration.setNumExecutorsStr(this.numExecutorsStr);
       instanceConfiguration.setStartupScript(this.startupScript);
       instanceConfiguration.setPreemptible(this.preemptible);

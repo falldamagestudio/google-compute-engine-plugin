@@ -16,7 +16,6 @@
 
 package com.google.jenkins.plugins.computeengine;
 
-import static java.util.Collections.emptyList;
 import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
 
 import com.cloudbees.plugins.credentials.CredentialsMatchers;
@@ -53,6 +52,7 @@ import hudson.util.ListBoxModel;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
@@ -67,6 +67,7 @@ import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 import java.util.logging.SimpleFormatter;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import javax.annotation.Nonnull;
 import javax.servlet.ServletException;
 import jenkins.model.Jenkins;
@@ -87,7 +88,6 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
   public static final String CLOUD_ID_LABEL_KEY = "jenkins_cloud_id";
 
   private static final SimpleFormatter sf = new SimpleFormatter();
-  private static int configsNext;
 
   private final String projectId;
   private final String credentialsId;
@@ -98,6 +98,9 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
   private transient volatile ComputeClient client;
   private transient volatile Compute compute;
   private boolean noDelayProvisioning;
+
+  private InstanceConfigurationPrioritizer instanceConfigurationPrioritizer =
+      new InstanceConfigurationPrioritizer(CLOUD_PREFIX, CONFIG_LABEL_KEY, CLOUD_ID_LABEL_KEY);
 
   @DataBoundConstructor
   public ComputeEngineCloud(
@@ -270,52 +273,72 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
     readResolve();
   }
 
-  private Set<String> findLocalInstances(ComputeEngineCloud cloud) {
+  private Stream<String> getAllNodes(ComputeEngineCloud cloud) {
     return Jenkins.get().getNodes().stream()
         .filter(node -> node instanceof ComputeEngineInstance)
         .map(node -> (ComputeEngineInstance) node)
         .filter(node -> node.getCloud().equals(cloud))
-        .map(Slave::getNodeName)
-        .collect(Collectors.toSet());
+        .map(Slave::getNodeName);
   }
 
-  private List<Instance> findTerminatedRemoteInstances(ComputeEngineCloud cloud) {
+  // Get all instances associated with a cloud, regardless of their status
+
+  private Stream<Instance> getAllInstances(ComputeEngineCloud cloud) {
     Map<String, String> filterLabel = ImmutableMap.of(CLOUD_ID_LABEL_KEY, cloud.getInstanceId());
     try {
-      return cloud.getClient().listInstancesWithLabel(cloud.getProjectId(), filterLabel).stream()
-          .filter(instance -> instance.getStatus().equals("TERMINATED"))
-          .collect(Collectors.toList());
+      return cloud.getClient().listInstancesWithLabel(cloud.getProjectId(), filterLabel).stream();
     } catch (IOException ex) {
-      log.log(Level.WARNING, "Error finding remote instances", ex);
-      return emptyList();
+      log.log(Level.WARNING, "Error finding instances", ex);
+      return Stream.<Instance>empty();
     }
   }
 
-  private List<Instance> findAvailableRemoteInstances(ComputeEngineCloud cloud) {
-    List<Instance> terminatedRemoteInstances = findTerminatedRemoteInstances(cloud);
-    Set<String> localInstances = findLocalInstances(cloud);
-
-    for (Instance instance : terminatedRemoteInstances) {
-      log.log(Level.INFO, "Terminated remote instance: " + instance.getName());
-    }
-
-    for (String instanceName : localInstances) {
-      log.log(Level.INFO, "Local instance: " + instanceName);
-    }
-
-    List<Instance> availableRemoteInstances =
-        terminatedRemoteInstances.stream()
-            .filter(remote -> !localInstances.contains(remote.getName()))
-            .collect(Collectors.toList());
-    return availableRemoteInstances;
+  private Stream<Instance> filterTerminatedInstances(Stream<Instance> instances) {
+    return instances.filter(instance -> instance.getStatus().equals("TERMINATED"));
   }
 
-  private Instance getAvailableRemoteInstance() {
-    List<Instance> availableRemoteInstances = findAvailableRemoteInstances(this);
-    if (!availableRemoteInstances.isEmpty()) {
-      return availableRemoteInstances.iterator().next();
-    } else {
-      return null;
+  // Given a stream of nodes, and a stream of instances,
+  //   identify which of those instances are candidates for being re-used during provisioning
+  //
+  // An instance needs to satisfy these conditions to be provisionable:
+  // * It must not currently be associated with a node
+  // * It must currently have TERMINATED status
+
+  private Stream<Instance> filterProvisionableInstances(
+      Stream<String> allNodes, Stream<Instance> allInstances) {
+    Stream<Instance> terminatedInstances = filterTerminatedInstances(allInstances);
+
+    Set<String> allNodesSet = allNodes.collect(Collectors.toSet());
+
+    Stream<Instance> provisionableInstances =
+        terminatedInstances.filter(instance -> !allNodesSet.contains(instance.getName()));
+
+    return provisionableInstances;
+  }
+
+  private void logConfigAndInstanceResult(
+      InstanceConfigurationPrioritizer.ConfigAndInstance configAndInstance) {
+    if (configAndInstance != null
+        && configAndInstance.config != null
+        && configAndInstance.instance != null) {
+      log.info(
+          String.format(
+              "Cloud provider %s - choosing configuration %s and persistent instance %s for provisioning a new node",
+              getCloudName(),
+              configAndInstance.config.getDisplayName(),
+              configAndInstance.instance.getName()));
+    } else if (configAndInstance != null
+        && configAndInstance.config != null
+        && configAndInstance.instance == null) {
+      log.info(
+          String.format(
+              "Cloud provider %s - choosing configuration %s but no existing instance for provisioning a new node",
+              getCloudName(), configAndInstance.config.getDisplayName()));
+    } else if (configAndInstance == null) {
+      log.warning(
+          String.format(
+              "Could not provision new nodes to meet demand. All instance configurations for cloud provider %s have reached their max num instances",
+              getCloudName()));
     }
   }
 
@@ -343,13 +366,24 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
           break;
         }
 
-        InstanceConfiguration config = chooseConfigFromList(configs);
+        Stream<String> allNodes = getAllNodes(this);
+        List<Instance> allInstances = getAllInstances(this).collect(Collectors.toList());
+        List<Instance> provisionableInstances =
+            filterProvisionableInstances(allNodes, allInstances.stream())
+                .collect(Collectors.toList());
+        InstanceConfigurationPrioritizer.ConfigAndInstance configAndInstance =
+            instanceConfigurationPrioritizer.getConfigAndInstance(
+                configs, allInstances, provisionableInstances);
+        logConfigAndInstanceResult(configAndInstance);
 
-        Instance instance = getAvailableRemoteInstance();
+        if (configAndInstance == null) {
+          break;
+        }
 
-        final ComputeEngineInstance node = config.provision(instance);
+        final ComputeEngineInstance node =
+            configAndInstance.config.provision(configAndInstance.instance);
         Jenkins.get().addNode(node);
-        result.add(createPlannedNode(config, node));
+        result.add(createPlannedNode(configAndInstance.config, node));
         excessWorkload -= node.getNumExecutors();
         availableCapacity -= node.getNumExecutors();
       }
@@ -364,18 +398,6 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
           nce.getMessage());
     }
     return result;
-  }
-
-  /**
-   * Choose config from list of available configs. Current implementation use round robin strategy
-   * starting at semi random element of list. Because most of times arriving requests asks for only
-   * 1 new node, we don't want to start every time from 1 element.
-   *
-   * @param configs List of configs to choose from.
-   * @return Chosen config from list.
-   */
-  private InstanceConfiguration chooseConfigFromList(List<InstanceConfiguration> configs) {
-    return configs.get(Math.abs(configsNext++) % configs.size());
   }
 
   private PlannedNode createPlannedNode(InstanceConfiguration config, ComputeEngineInstance node) {
@@ -516,9 +538,20 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
       throw HttpResponses.error(SC_BAD_REQUEST, "No such Instance Configuration: " + configuration);
     }
 
-    Instance instance = getAvailableRemoteInstance();
+    Stream<String> allNodes = getAllNodes(this);
+    List<Instance> allInstances = getAllInstances(this).collect(Collectors.toList());
+    List<Instance> provisionableInstances =
+        filterProvisionableInstances(allNodes, allInstances.stream()).collect(Collectors.toList());
+    InstanceConfigurationPrioritizer.ConfigAndInstance configAndInstance =
+        instanceConfigurationPrioritizer.getConfigAndInstance(
+            Arrays.asList(new InstanceConfiguration[] {c}), allInstances, provisionableInstances);
+    logConfigAndInstanceResult(configAndInstance);
 
-    ComputeEngineInstance node = c.provision(instance);
+    if (configAndInstance == null)
+      throw HttpResponses.error(
+          SC_BAD_REQUEST, "No instance configuration is suitable for provisioning a new node.");
+
+    ComputeEngineInstance node = configAndInstance.config.provision(configAndInstance.instance);
     if (node == null) throw HttpResponses.error(SC_BAD_REQUEST, "Could not provision new node.");
     Jenkins.get().addNode(node);
 

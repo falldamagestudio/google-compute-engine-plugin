@@ -22,6 +22,9 @@
             <f:entry title="${%Description}" field="description">
                 <f:textbox/>
             </f:entry>
+            <f:entry title="${%Max number of instances}" field="maxNumInstancesStr">
+                <f:textbox/>
+            </f:entry>
             <f:entry title="${%Node Retention Time (minutes)}" field="retentionTimeMinutesStr">
                 <f:textbox default="${descriptor.defaultRetentionTimeMinutes()}"/>
             </f:entry>
