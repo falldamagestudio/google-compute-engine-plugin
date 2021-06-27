@@ -138,7 +138,10 @@ public class ComputeEngineInstance extends AbstractCloudSlave {
     {
       Operation.Error opError = new Operation.Error();
       try {
-        LOGGER.log(Level.INFO, "Waiting for stop operation for instance {0} to complete", new Object[] {name});
+        LOGGER.log(
+            Level.INFO,
+            "Waiting for stop operation for instance {0} to complete",
+            new Object[] {name});
         Operation stopResponseFinal =
             cloud
                 .getClient()
@@ -216,7 +219,10 @@ public class ComputeEngineInstance extends AbstractCloudSlave {
 
       Operation.Error opError = new Operation.Error();
       try {
-        LOGGER.log(Level.INFO, "Waiting for delete operation for instance {0} to complete", new Object[] {name});
+        LOGGER.log(
+            Level.INFO,
+            "Waiting for delete operation for instance {0} to complete",
+            new Object[] {name});
         Operation terminateResponseFinal =
             cloud
                 .getClient()
