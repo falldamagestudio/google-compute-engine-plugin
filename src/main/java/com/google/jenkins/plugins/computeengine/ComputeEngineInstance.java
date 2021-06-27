@@ -122,18 +122,122 @@ public class ComputeEngineInstance extends AbstractCloudSlave {
     return new ComputeEngineComputer(this);
   }
 
-  protected void stop(TaskListener listener, String project, String zone, String name) {
-    try {
-      ComputeEngineCloud cloud = getCloud();
-      Compute compute = cloud.getCompute();
+  protected Operation stopAsync(String project, String zone, String name) throws IOException {
+    ComputeEngineCloud cloud = getCloud();
+    Compute compute = cloud.getCompute();
 
-      Compute.Instances.Stop request = compute.instances().stop(project, zone, name);
-      Operation response = request.execute();
+    Compute.Instances.Stop request = compute.instances().stop(project, zone, name);
+    Operation response = request.execute();
+    return response;
+  }
 
-      // TODO: Change code below to process the `response` object:
-      LOGGER.log(Level.INFO, "Stop response: " + response);
-    } catch (IOException e) {
-      listener.error(e.getMessage());
+  private void _terminateThreadedWork(Operation stopResponse) {
+
+    // Wait for instance stop operation to complete
+
+    {
+      Operation.Error opError = new Operation.Error();
+      try {
+        LOGGER.log(Level.INFO, "Waiting for stop operation for instance {0} to complete", new Object[] {name});
+        Operation stopResponseFinal =
+            cloud
+                .getClient()
+                .waitForOperationCompletion(cloud.getProjectId(), stopResponse, 600000);
+        opError = stopResponseFinal.getError();
+      } catch (InterruptedException e) {
+        LOGGER.info(
+            String.format("Stop failed while waiting for operation to complete. Interrupted"));
+        return;
+
+      } catch (OperationException e) {
+        opError = e.getError();
+      }
+      if (opError != null) {
+        LOGGER.info(
+            String.format(
+                "Stop failed while waiting for operation %s to complete. Operation error was %s",
+                stopResponse, opError.getErrors().get(0).getMessage()));
+        return;
+      }
+    }
+
+    boolean persist = false;
+
+    // If there is a valid instance configuration,
+    //   and the instance configuration allows persisting the same or more than the current number
+    // of
+    //   instances, choose to persist the current instance
+
+    InstanceConfiguration instanceConfiguration = getInstanceConfiguration();
+    if (instanceConfiguration != null) {
+      Stream<Instance> allInstances = cloud.getAllInstances();
+      InstanceConfigurationPrioritizer instanceConfigurationPrioritizer =
+          cloud.getInstanceConfigurationPrioritizer();
+      Stream<Instance> instancesForConfig =
+          instanceConfigurationPrioritizer.filterInstancesForConfig(
+              instanceConfiguration, allInstances);
+      int maxNumInstancesToPersist = instanceConfiguration.getMaxNumInstancesToPersist();
+      long numInstancesForConfig = instancesForConfig.count();
+      persist = (maxNumInstancesToPersist >= numInstancesForConfig);
+      LOGGER.log(
+          Level.INFO,
+          "Instance configuration "
+              + instanceConfigurationName
+              + " specifies max "
+              + Integer.toString(maxNumInstancesToPersist)
+              + " instances to persist: there are currently "
+              + Long.toString(numInstancesForConfig)
+              + " for that instance configuration; the instance will "
+              + (persist ? "" : "not ")
+              + "be persisted");
+    } else {
+      LOGGER.log(
+          Level.INFO,
+          "Instance configuration "
+              + instanceConfigurationName
+              + " not found; instance will not be persisted");
+    }
+
+    if (!persist) {
+
+      // This instance should not be persisted. Delete it right away.
+
+      LOGGER.log(Level.INFO, "Deleting instance {0}", new Object[] {name});
+
+      Operation terminateResponse = null;
+      try {
+        terminateResponse =
+            cloud.getClient().terminateInstanceAsync(cloud.getProjectId(), zone, name);
+      } catch (IOException e) {
+        LOGGER.info(
+            String.format("Delete failed while issuing operation to complete. IOException"));
+        return;
+      }
+
+      Operation.Error opError = new Operation.Error();
+      try {
+        LOGGER.log(Level.INFO, "Waiting for delete operation for instance {0} to complete", new Object[] {name});
+        Operation terminateResponseFinal =
+            cloud
+                .getClient()
+                .waitForOperationCompletion(cloud.getProjectId(), terminateResponse, 600000);
+        opError = terminateResponseFinal.getError();
+      } catch (InterruptedException e) {
+        LOGGER.info(
+            String.format("Delete failed while waiting for operation to complete. Interrupted"));
+        return;
+      } catch (OperationException e) {
+        opError = e.getError();
+      }
+      if (opError != null) {
+        LOGGER.info(
+            String.format(
+                "Delete instance failed while waiting for operation %s to complete. Operation error was %s",
+                terminateResponse, opError.getErrors().get(0).getMessage()));
+        return;
+      }
+
+      LOGGER.log(Level.INFO, "Deleting instance {0} done", new Object[] {name});
     }
   }
 
@@ -158,56 +262,21 @@ public class ComputeEngineInstance extends AbstractCloudSlave {
                 cloud.getProjectId(), this.zone, this.getNodeName(), createSnapshotTimeout);
       }
 
-      boolean persist = false;
+      LOGGER.log(Level.INFO, "Stopping instance {0}", new Object[] {name});
 
-      // If there is a valid instance configuration,
-      //   and the instance configuration allows persisting the same or more than the current number
-      // of
-      //   instances, choose to persist the current instance
+      Operation stopResponse = stopAsync(cloud.getProjectId(), nameFromSelfLink(zone), name);
 
-      InstanceConfiguration instanceConfiguration = getInstanceConfiguration();
-      if (instanceConfiguration != null) {
-        Stream<Instance> allInstances = cloud.getAllInstances();
-        InstanceConfigurationPrioritizer instanceConfigurationPrioritizer =
-            cloud.getInstanceConfigurationPrioritizer();
-        Stream<Instance> instancesForConfig =
-            instanceConfigurationPrioritizer.filterInstancesForConfig(
-                instanceConfiguration, allInstances);
-        int maxNumInstancesToPersist = instanceConfiguration.getMaxNumInstancesToPersist();
-        long numInstancesForConfig = instancesForConfig.count();
-        persist = (maxNumInstancesToPersist >= numInstancesForConfig);
-        LOGGER.log(
-            Level.INFO,
-            "Instance configuration "
-                + instanceConfigurationName
-                + " specifies max "
-                + Integer.toString(maxNumInstancesToPersist)
-                + " instances to persist: there are currently "
-                + Long.toString(numInstancesForConfig)
-                + " for that instance configuration; the instance will "
-                + (persist ? "" : "not ")
-                + "be persisted");
-      } else {
-        LOGGER.log(
-            Level.INFO,
-            "Instance configuration "
-                + instanceConfigurationName
-                + " not found; instance will not be persisted");
-      }
-
-      if (persist) {
-        // Don't delete the instance, just stop it.
-        stop(listener, cloud.getProjectId(), nameFromSelfLink(zone), name);
-      } else {
-        // If the instance is running, attempt to terminate it. This is an async call and we
-        // return immediately, hoping for the best.
-        cloud.getClient().terminateInstanceAsync(cloud.getProjectId(), zone, name);
-      }
+      Computer.threadPoolForRemoting.submit(
+          () -> {
+            _terminateThreadedWork(stopResponse);
+          });
 
     } catch (CloudNotFoundException cnfe) {
       listener.error(cnfe.getMessage());
     } catch (OperationException oe) {
       listener.error(oe.getError().toPrettyString());
+    } catch (IOException e) {
+      listener.error(e.getMessage());
     }
   }
 
