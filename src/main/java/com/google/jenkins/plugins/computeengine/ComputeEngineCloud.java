@@ -273,7 +273,7 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
     readResolve();
   }
 
-  private Stream<String> getAllNodes() {
+  public Stream<String> getAllNodes() {
     return Jenkins.get().getNodes().stream()
         .filter(node -> node instanceof ComputeEngineInstance)
         .map(node -> (ComputeEngineInstance) node)
