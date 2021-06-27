@@ -167,7 +167,7 @@ public class ComputeEngineInstance extends AbstractCloudSlave {
 
       InstanceConfiguration instanceConfiguration = getInstanceConfiguration();
       if (instanceConfiguration != null) {
-        Stream<Instance> allInstances = cloud.getAllInstances(cloud);
+        Stream<Instance> allInstances = cloud.getAllInstances();
         InstanceConfigurationPrioritizer instanceConfigurationPrioritizer =
             cloud.getInstanceConfigurationPrioritizer();
         Stream<Instance> instancesForConfig =

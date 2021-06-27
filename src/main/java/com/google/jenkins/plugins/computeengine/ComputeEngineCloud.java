@@ -273,20 +273,20 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
     readResolve();
   }
 
-  private Stream<String> getAllNodes(ComputeEngineCloud cloud) {
+  private Stream<String> getAllNodes() {
     return Jenkins.get().getNodes().stream()
         .filter(node -> node instanceof ComputeEngineInstance)
         .map(node -> (ComputeEngineInstance) node)
-        .filter(node -> node.getCloud().equals(cloud))
+        .filter(node -> node.getCloud().equals(this))
         .map(Slave::getNodeName);
   }
 
   // Get all instances associated with a cloud, regardless of their status
 
-  public Stream<Instance> getAllInstances(ComputeEngineCloud cloud) {
-    Map<String, String> filterLabel = ImmutableMap.of(CLOUD_ID_LABEL_KEY, cloud.getInstanceId());
+  public Stream<Instance> getAllInstances() {
+    Map<String, String> filterLabel = ImmutableMap.of(CLOUD_ID_LABEL_KEY, getInstanceId());
     try {
-      return cloud.getClient().listInstancesWithLabel(cloud.getProjectId(), filterLabel).stream();
+      return getClient().listInstancesWithLabel(getProjectId(), filterLabel).stream();
     } catch (IOException ex) {
       log.log(Level.WARNING, "Error finding instances", ex);
       return Stream.<Instance>empty();
@@ -366,8 +366,8 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
           break;
         }
 
-        Stream<String> allNodes = getAllNodes(this);
-        List<Instance> allInstances = getAllInstances(this).collect(Collectors.toList());
+        Stream<String> allNodes = getAllNodes();
+        List<Instance> allInstances = getAllInstances().collect(Collectors.toList());
         List<Instance> provisionableInstances =
             filterProvisionableInstances(allNodes, allInstances.stream())
                 .collect(Collectors.toList());
@@ -552,8 +552,8 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
       throw HttpResponses.error(SC_BAD_REQUEST, "No such Instance Configuration: " + configuration);
     }
 
-    Stream<String> allNodes = getAllNodes(this);
-    List<Instance> allInstances = getAllInstances(this).collect(Collectors.toList());
+    Stream<String> allNodes = getAllNodes();
+    List<Instance> allInstances = getAllInstances().collect(Collectors.toList());
     List<Instance> provisionableInstances =
         filterProvisionableInstances(allNodes, allInstances.stream()).collect(Collectors.toList());
     InstanceConfigurationPrioritizer.ConfigAndInstance configAndInstance =
