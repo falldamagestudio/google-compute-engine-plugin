@@ -16,10 +16,15 @@
 
 package com.google.jenkins.plugins.computeengine;
 
+import static com.google.cloud.graphite.platforms.plugin.client.util.ClientUtil.nameFromSelfLink;
+
+import com.google.api.services.compute.Compute;
 import com.google.api.services.compute.model.Instance;
+import com.google.api.services.compute.model.Operation;
 import hudson.Extension;
 import hudson.model.PeriodicWork;
 import java.io.IOException;
+import java.text.MessageFormat;
 import java.util.List;
 import java.util.Set;
 import java.util.logging.Level;
@@ -44,35 +49,147 @@ public class CleanLostNodesWork extends PeriodicWork {
   /** {@inheritDoc} */
   @Override
   protected void doRun() {
-    logger.log(Level.FINEST, "Starting clean lost nodes worker");
+    logger.log(Level.INFO, "Starting clean lost nodes worker");
     getClouds().forEach(this::cleanCloud);
   }
 
   private void cleanCloud(ComputeEngineCloud cloud) {
-    logger.log(Level.FINEST, "Cleaning cloud " + cloud.getCloudName());
+    logger.log(Level.INFO, "Cleaning cloud " + cloud.getCloudName());
     Stream<Instance> allInstances = cloud.getAllInstances();
-    Set<String> allNodesSet = cloud.getAllNodes().collect(Collectors.toSet());
-    allInstances
-        .filter(instance -> shouldTerminateStatus(instance.getStatus()))
-        .filter(instance -> isOrphaned(instance, allNodesSet))
-        .forEach(instance -> terminateInstance(instance, cloud));
+    Set<String> allNodes = cloud.getAllNodes().collect(Collectors.toSet());
+
+    // We are only interested in instances that do not have matching nodes.
+    // Instances that have matching nodes are still properly "under control" by
+    //  Jenkins and its plugins.
+
+    List<Instance> orphanedInstances =
+        allInstances
+            .filter(instance -> isOrphaned(instance, allNodes))
+            .collect(Collectors.toList());
+
+    if (!orphanedInstances.isEmpty()) {
+      logger.log(
+          Level.INFO,
+          "Instances without matching nodes in cloud {0}: {1}",
+          new Object[] {
+            cloud.getCloudName(),
+            String.join(
+                ",",
+                orphanedInstances.stream()
+                    .map(instance -> instance.getName())
+                    .collect(Collectors.toList()))
+          });
+    }
+
+    // Any instances that are currently running, but do not have matching nodes, should be stopped
+    //  right away.
+    // Once they have stopped, they will be deleted during the next cleanup pass in case they also
+    //  are expired.
+
+    List<Instance> instancesToStop =
+        orphanedInstances.stream()
+            .filter(instance -> isRunning(instance))
+            .collect(Collectors.toList());
+
+    if (!instancesToStop.isEmpty()) {
+      logger.log(
+          Level.INFO,
+          "Instances that should be stopped in cloud {0}: {1}",
+          new Object[] {
+            cloud.getCloudName(),
+            String.join(
+                ",",
+                instancesToStop.stream()
+                    .map(instance -> instance.getName())
+                    .collect(Collectors.toList()))
+          });
+    }
+
+    // Instances that are terminated, should be deleted, if:
+    // A) the instance should not be persisted, or
+    // B) the instance should be persisted, but its retention timeout has expired
+
+    List<Instance> instancesToDelete =
+        orphanedInstances.stream()
+            .filter(instance -> isTerminated(instance) && hasExpired(instance))
+            .collect(Collectors.toList());
+
+    if (!instancesToDelete.isEmpty()) {
+      logger.log(
+          Level.INFO,
+          "Instances that should be deleted in cloud {0}: {1}",
+          new Object[] {
+            cloud.getCloudName(),
+            String.join(
+                ",",
+                instancesToDelete.stream()
+                    .map(instance -> instance.getName())
+                    .collect(Collectors.toList()))
+          });
+    }
+
+    instancesToStop.stream().forEach(instance -> stopInstance(instance, cloud));
+    instancesToDelete.stream().forEach(instance -> deleteInstance(instance, cloud));
   }
 
   private boolean isOrphaned(Instance instance, Set<String> nodes) {
     String instanceName = instance.getName();
-    logger.log(Level.FINEST, "Checking instance " + instanceName);
     return !nodes.contains(instanceName);
   }
 
-  private void terminateInstance(Instance instance, ComputeEngineCloud cloud) {
+  private boolean isRunning(Instance instance) {
+    return instance.getStatus().equals("RUNNING");
+  }
+
+  private boolean isTerminated(Instance instance) {
+    return instance.getStatus().equals("TERMINATED");
+  }
+
+  private boolean hasExpired(Instance instance) {
+    // TODO: implement
+    return false;
+  }
+
+  private void stopInstance(Instance instance, ComputeEngineCloud cloud) {
     String instanceName = instance.getName();
-    logger.log(Level.INFO, "Instance " + instanceName + " not found locally, removing it");
+    logger.log(
+        Level.INFO,
+        "Stopping instance {0} in cloud {1}",
+        new Object[] {instanceName, cloud.getCloudName()});
+    try {
+      Compute.Instances.Stop request =
+          cloud
+              .getCompute()
+              .instances()
+              .stop(cloud.getProjectId(), nameFromSelfLink(instance.getZone()), instanceName);
+      Operation response = request.execute();
+    } catch (IOException ex) {
+      logger.log(
+          Level.WARNING,
+          MessageFormat.format(
+              "Error stopping instance {0} in cloud {1}",
+              new Object[] {instanceName, cloud.getCloudName()}),
+          ex);
+    }
+  }
+
+  private void deleteInstance(Instance instance, ComputeEngineCloud cloud) {
+    String instanceName = instance.getName();
+    logger.log(
+        Level.INFO,
+        "Deleting instance {0} from cloud {1}",
+        new Object[] {instanceName, cloud.getCloudName()});
     try {
       cloud
           .getClient()
           .terminateInstanceAsync(cloud.getProjectId(), instance.getZone(), instanceName);
     } catch (IOException ex) {
-      logger.log(Level.WARNING, "Error terminating instance " + instanceName, ex);
+      logger.log(
+          Level.WARNING,
+          MessageFormat.format(
+              "Error deleting instance {0} from cloud {1}",
+              new Object[] {instanceName, cloud.getCloudName()}),
+          ex);
     }
   }
 
@@ -81,9 +198,5 @@ public class CleanLostNodesWork extends PeriodicWork {
         .filter(cloud -> cloud instanceof ComputeEngineCloud)
         .map(cloud -> (ComputeEngineCloud) cloud)
         .collect(Collectors.toList());
-  }
-
-  private boolean shouldTerminateStatus(String status) {
-    return !status.equals("STOPPING");
   }
 }
