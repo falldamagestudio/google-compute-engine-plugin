@@ -23,19 +23,8 @@ import java.util.stream.Stream;
 
 public class InstanceConfigurationPrioritizer {
 
-  private String CLOUD_PREFIX;
-  private String CONFIG_LABEL_KEY;
-  private String CLOUD_ID_LABEL_KEY;
-
   private static int configsNext;
   private static int instancesNext;
-
-  public InstanceConfigurationPrioritizer(
-      String CLOUD_PREFIX, String CONFIG_LABEL_KEY, String CLOUD_ID_LABEL_KEY) {
-    this.CLOUD_PREFIX = CLOUD_PREFIX;
-    this.CONFIG_LABEL_KEY = CONFIG_LABEL_KEY;
-    this.CLOUD_ID_LABEL_KEY = CLOUD_ID_LABEL_KEY;
-  }
 
   /**
    * Choose config from list of available configs. Current implementation use round robin strategy
@@ -69,7 +58,7 @@ public class InstanceConfigurationPrioritizer {
         instance ->
             instance
                 .getLabels()
-                .getOrDefault(CONFIG_LABEL_KEY, "<no config label key found>")
+                .getOrDefault(ComputeEngineCloud.CONFIG_LABEL_KEY, "<no config label key found>")
                 .equals(config.getNamePrefix()));
   }
 

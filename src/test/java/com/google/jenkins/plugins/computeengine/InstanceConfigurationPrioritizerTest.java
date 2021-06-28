@@ -35,16 +35,12 @@ import org.mockito.junit.MockitoJUnitRunner;
 @RunWith(MockitoJUnitRunner.class)
 public class InstanceConfigurationPrioritizerTest {
 
-  private static final String CLOUD_PREFIX = "test-gce-";
-  private static final String CONFIG_LABEL_KEY = "test-jenkins_config_name";
-  private static final String CLOUD_ID_LABEL_KEY = "test-jenkins_cloud_id";
-
   @Rule public JenkinsRule r = new JenkinsRule();
 
   @Test
   public void shouldFilterInstancesForConfig() {
     InstanceConfigurationPrioritizer instanceConfigurationPrioritizer =
-        new InstanceConfigurationPrioritizer(CLOUD_PREFIX, CONFIG_LABEL_KEY, CLOUD_ID_LABEL_KEY);
+        new InstanceConfigurationPrioritizer();
 
     String namePrefix1 = "name-prefix-1";
     String namePrefix2 = "name-prefix-2";
@@ -52,13 +48,13 @@ public class InstanceConfigurationPrioritizerTest {
     InstanceConfiguration config = InstanceConfiguration.builder().namePrefix(namePrefix1).build();
 
     Instance instance1 = new Instance();
-    instance1.setLabels(Collections.singletonMap(CONFIG_LABEL_KEY, namePrefix1));
+    instance1.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix1));
 
     Instance instance2 = new Instance();
-    instance2.setLabels(Collections.singletonMap(CONFIG_LABEL_KEY, namePrefix2));
+    instance2.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix2));
 
     Instance instance3 = new Instance();
-    instance3.setLabels(Collections.singletonMap(CONFIG_LABEL_KEY, namePrefix1));
+    instance3.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix1));
 
     List<Instance> instances = Arrays.asList(new Instance[] {instance1, instance2, instance3});
 
@@ -76,7 +72,7 @@ public class InstanceConfigurationPrioritizerTest {
   @Test
   public void shouldFilterConfigsWithProvisionableInstances() {
     InstanceConfigurationPrioritizer instanceConfigurationPrioritizer =
-        new InstanceConfigurationPrioritizer(CLOUD_PREFIX, CONFIG_LABEL_KEY, CLOUD_ID_LABEL_KEY);
+        new InstanceConfigurationPrioritizer();
 
     String namePrefix1 = "name-prefix-1";
     String namePrefix2 = "name-prefix-2";
@@ -87,13 +83,13 @@ public class InstanceConfigurationPrioritizerTest {
     InstanceConfiguration config3 = InstanceConfiguration.builder().namePrefix(namePrefix3).build();
 
     Instance instance1 = new Instance();
-    instance1.setLabels(Collections.singletonMap(CONFIG_LABEL_KEY, namePrefix2));
+    instance1.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix2));
 
     Instance instance2 = new Instance();
-    instance2.setLabels(Collections.singletonMap(CONFIG_LABEL_KEY, namePrefix2));
+    instance2.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix2));
 
     Instance instance3 = new Instance();
-    instance3.setLabels(Collections.singletonMap(CONFIG_LABEL_KEY, namePrefix3));
+    instance3.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix3));
 
     List<InstanceConfiguration> configs =
         Arrays.asList(new InstanceConfiguration[] {config1, config2, config3});
@@ -112,7 +108,7 @@ public class InstanceConfigurationPrioritizerTest {
   @Test
   public void shouldFilterProvisionableInstancesForConfig() {
     InstanceConfigurationPrioritizer instanceConfigurationPrioritizer =
-        new InstanceConfigurationPrioritizer(CLOUD_PREFIX, CONFIG_LABEL_KEY, CLOUD_ID_LABEL_KEY);
+        new InstanceConfigurationPrioritizer();
 
     String namePrefix1 = "name-prefix-1";
     String namePrefix2 = "name-prefix-2";
@@ -121,13 +117,13 @@ public class InstanceConfigurationPrioritizerTest {
     InstanceConfiguration config = InstanceConfiguration.builder().namePrefix(namePrefix1).build();
 
     Instance instance1 = new Instance();
-    instance1.setLabels(Collections.singletonMap(CONFIG_LABEL_KEY, namePrefix1));
+    instance1.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix1));
 
     Instance instance2 = new Instance();
-    instance2.setLabels(Collections.singletonMap(CONFIG_LABEL_KEY, namePrefix1));
+    instance2.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix1));
 
     Instance instance3 = new Instance();
-    instance3.setLabels(Collections.singletonMap(CONFIG_LABEL_KEY, namePrefix3));
+    instance3.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix3));
 
     List<Instance> instances = Arrays.asList(new Instance[] {instance1, instance2, instance3});
 
@@ -143,7 +139,7 @@ public class InstanceConfigurationPrioritizerTest {
   @Test
   public void shouldFilterConfigsWithSpareCapacity() {
     InstanceConfigurationPrioritizer instanceConfigurationPrioritizer =
-        new InstanceConfigurationPrioritizer(CLOUD_PREFIX, CONFIG_LABEL_KEY, CLOUD_ID_LABEL_KEY);
+        new InstanceConfigurationPrioritizer();
 
     String namePrefix1 = "name-prefix-1";
     String namePrefix2 = "name-prefix-2";
@@ -169,13 +165,13 @@ public class InstanceConfigurationPrioritizerTest {
             .build();
 
     Instance instance1 = new Instance();
-    instance1.setLabels(Collections.singletonMap(CONFIG_LABEL_KEY, namePrefix3));
+    instance1.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix3));
 
     Instance instance2 = new Instance();
-    instance2.setLabels(Collections.singletonMap(CONFIG_LABEL_KEY, namePrefix2));
+    instance2.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix2));
 
     Instance instance3 = new Instance();
-    instance3.setLabels(Collections.singletonMap(CONFIG_LABEL_KEY, namePrefix3));
+    instance3.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix3));
 
     List<InstanceConfiguration> configs =
         Arrays.asList(new InstanceConfiguration[] {config1, config2, config3});
@@ -217,13 +213,13 @@ public class InstanceConfigurationPrioritizerTest {
             .build();
 
     Instance instance1 = new Instance();
-    instance1.setLabels(Collections.singletonMap(CONFIG_LABEL_KEY, namePrefix1));
+    instance1.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix1));
 
     Instance instance2 = new Instance();
-    instance2.setLabels(Collections.singletonMap(CONFIG_LABEL_KEY, namePrefix3));
+    instance2.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix3));
 
     Instance instance3 = new Instance();
-    instance3.setLabels(Collections.singletonMap(CONFIG_LABEL_KEY, namePrefix3));
+    instance3.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix3));
 
     List<InstanceConfiguration> configs =
         Arrays.asList(new InstanceConfiguration[] {config1, config2, config3});
@@ -236,7 +232,7 @@ public class InstanceConfigurationPrioritizerTest {
       // Prefer config 1 if that is the only config with provisionable instances
 
       InstanceConfigurationPrioritizer instanceConfigurationPrioritizer =
-          new InstanceConfigurationPrioritizer(CLOUD_PREFIX, CONFIG_LABEL_KEY, CLOUD_ID_LABEL_KEY);
+          new InstanceConfigurationPrioritizer();
       InstanceConfigurationPrioritizer.ConfigAndInstance configAndInstance =
           instanceConfigurationPrioritizer.getConfigAndInstance(
               configs, instances_config1Only, instances_config1Only);
@@ -249,7 +245,7 @@ public class InstanceConfigurationPrioritizerTest {
       // Prefer config 3 if that is the only config with provisionable instances
 
       InstanceConfigurationPrioritizer instanceConfigurationPrioritizer =
-          new InstanceConfigurationPrioritizer(CLOUD_PREFIX, CONFIG_LABEL_KEY, CLOUD_ID_LABEL_KEY);
+          new InstanceConfigurationPrioritizer();
       InstanceConfigurationPrioritizer.ConfigAndInstance configAndInstance =
           instanceConfigurationPrioritizer.getConfigAndInstance(
               configs, instances_config3Only, instances_config3Only);
@@ -286,13 +282,13 @@ public class InstanceConfigurationPrioritizerTest {
             .build();
 
     Instance instance1 = new Instance();
-    instance1.setLabels(Collections.singletonMap(CONFIG_LABEL_KEY, namePrefix1));
+    instance1.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix1));
 
     Instance instance2 = new Instance();
-    instance2.setLabels(Collections.singletonMap(CONFIG_LABEL_KEY, namePrefix3));
+    instance2.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix3));
 
     Instance instance3 = new Instance();
-    instance3.setLabels(Collections.singletonMap(CONFIG_LABEL_KEY, namePrefix3));
+    instance3.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix3));
 
     List<InstanceConfiguration> configs =
         Arrays.asList(new InstanceConfiguration[] {config1, config2, config3});
@@ -302,7 +298,7 @@ public class InstanceConfigurationPrioritizerTest {
     // Prefer config 2 since that is the only config with spare capacity
 
     InstanceConfigurationPrioritizer instanceConfigurationPrioritizer =
-        new InstanceConfigurationPrioritizer(CLOUD_PREFIX, CONFIG_LABEL_KEY, CLOUD_ID_LABEL_KEY);
+        new InstanceConfigurationPrioritizer();
     InstanceConfigurationPrioritizer.ConfigAndInstance configAndInstance =
         instanceConfigurationPrioritizer.getConfigAndInstance(
             configs, instances, new ArrayList<Instance>());
@@ -339,13 +335,13 @@ public class InstanceConfigurationPrioritizerTest {
             .build();
 
     Instance instance1 = new Instance();
-    instance1.setLabels(Collections.singletonMap(CONFIG_LABEL_KEY, namePrefix2));
+    instance1.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix2));
 
     Instance instance2 = new Instance();
-    instance2.setLabels(Collections.singletonMap(CONFIG_LABEL_KEY, namePrefix3));
+    instance2.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix3));
 
     Instance instance3 = new Instance();
-    instance3.setLabels(Collections.singletonMap(CONFIG_LABEL_KEY, namePrefix3));
+    instance3.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix3));
 
     List<InstanceConfiguration> configs =
         Arrays.asList(new InstanceConfiguration[] {config1, config2, config3});
@@ -355,7 +351,7 @@ public class InstanceConfigurationPrioritizerTest {
     // No configuration is suitable; all are at max capacity, with no provisionable instances
 
     InstanceConfigurationPrioritizer instanceConfigurationPrioritizer =
-        new InstanceConfigurationPrioritizer(CLOUD_PREFIX, CONFIG_LABEL_KEY, CLOUD_ID_LABEL_KEY);
+        new InstanceConfigurationPrioritizer();
     InstanceConfigurationPrioritizer.ConfigAndInstance configAndInstance =
         instanceConfigurationPrioritizer.getConfigAndInstance(
             configs, instances, new ArrayList<Instance>());

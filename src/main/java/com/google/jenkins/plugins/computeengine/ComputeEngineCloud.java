@@ -100,7 +100,7 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
   private boolean noDelayProvisioning;
 
   private InstanceConfigurationPrioritizer instanceConfigurationPrioritizer =
-      new InstanceConfigurationPrioritizer(CLOUD_PREFIX, CONFIG_LABEL_KEY, CLOUD_ID_LABEL_KEY);
+      new InstanceConfigurationPrioritizer();
 
   @DataBoundConstructor
   public ComputeEngineCloud(

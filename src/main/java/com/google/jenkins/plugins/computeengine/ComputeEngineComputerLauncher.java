@@ -318,7 +318,7 @@ public abstract class ComputeEngineComputerLauncher extends ComputerLauncher {
       String customLaunchString = node.getCustomLaunchString();
       String launchString = "";
 
-      if (customLaunchString != "") {
+      if (!customLaunchString.isEmpty()) {
         launchString = formatCustomLaunchString(customLaunchString, jenkinsDir);
       } else {
         String javaExecPath = node.getJavaExecPathOrDefault();
@@ -356,7 +356,6 @@ public abstract class ComputeEngineComputerLauncher extends ComputerLauncher {
       throw new IllegalArgumentException("A ComputeEngineComputer with no node was provided");
     }
 
-    ComputeClient client = node.getCloud().getClient();
     final long timeout = node.getLaunchTimeoutMillis();
     final long startTime = System.currentTimeMillis();
     Connection conn = null;

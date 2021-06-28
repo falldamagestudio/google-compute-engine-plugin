@@ -20,7 +20,6 @@ import static com.google.cloud.graphite.platforms.plugin.client.util.ClientUtil.
 
 import com.google.api.services.compute.Compute;
 import com.google.api.services.compute.model.Instance;
-import com.google.api.services.compute.model.Operation;
 import hudson.Extension;
 import hudson.model.PeriodicWork;
 import java.io.IOException;
@@ -162,7 +161,10 @@ public class CleanLostNodesWork extends PeriodicWork {
               .getCompute()
               .instances()
               .stop(cloud.getProjectId(), nameFromSelfLink(instance.getZone()), instanceName);
-      Operation response = request.execute();
+      request.execute();
+      // TODO: inspect result from request.execute() and react accordingly
+      // or even better, package up this functionality somewhere central - we're doing roughly the
+      // same thing with similar error handling in at least two places in the codebase
     } catch (IOException ex) {
       logger.log(
           Level.WARNING,
