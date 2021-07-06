@@ -318,8 +318,7 @@ class ITUtil {
         .acceleratorConfiguration(new AcceleratorConfiguration(ACCELERATOR_NAME, ACCELERATOR_COUNT))
         .runAsUser(RUN_AS_USER)
         .startupScript(STARTUP_SCRIPT)
-        .javaExecPath("java -Dhudson.remoting.Launcher.pingIntervalSec=-1")
-        .customLaunchString("");
+        .javaExecPath("java -Dhudson.remoting.Launcher.pingIntervalSec=-1");
   }
 
   /*
