@@ -19,7 +19,6 @@ import static com.google.jenkins.plugins.computeengine.ComputeEngineCloud.checkP
 import com.cloudbees.jenkins.plugins.sshcredentials.impl.BasicSSHUserPrivateKey;
 import com.cloudbees.plugins.credentials.CredentialsMatchers;
 import com.cloudbees.plugins.credentials.CredentialsProvider;
-import com.cloudbees.plugins.credentials.SystemCredentialsProvider;
 import com.cloudbees.plugins.credentials.common.StandardListBoxModel;
 import com.cloudbees.plugins.credentials.common.StandardUsernameCredentials;
 import com.cloudbees.plugins.credentials.common.StandardUsernameListBoxModel;
@@ -97,8 +96,8 @@ public class WindowsConfiguration implements Describable<WindowsConfiguration>, 
       return null;
     }
     return CredentialsMatchers.firstOrNull(
-        new SystemCredentialsProvider.ProviderImpl()
-            .getCredentials(BasicSSHUserPrivateKey.class, Jenkins.get(), ACL.SYSTEM),
+        CredentialsProvider.lookupCredentials(
+            BasicSSHUserPrivateKey.class, Jenkins.get(), ACL.SYSTEM, new ArrayList<>()),
         CredentialsMatchers.withId(privateKeyCredentialsId));
   }
 
