@@ -299,14 +299,6 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
     return description;
   }
 
-  public int getMaxNumInstancesToCreate() {
-    return maxNumInstancesToCreate;
-  }
-
-  public int getMaxNumInstancesToPersist() {
-    return maxNumInstancesToPersist;
-  }
-
   public int getLaunchTimeoutMillis() {
     return launchTimeoutSeconds * 1000;
   }
@@ -580,6 +572,14 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
 
     public static void setComputeClient(ComputeClient client) {
       computeClient = client;
+    }
+
+    public static String defaultMaxNumInstancesToCreate() {
+      return DEFAULT_MAX_NUM_INSTANCES_TO_CREATE.toString();
+    }
+
+    public static String defaultMaxNumInstancesToPersist() {
+      return DEFAULT_MAX_NUM_INSTANCES_TO_PERSIST.toString();
     }
 
     public static String defaultRetentionTimeMinutes() {
@@ -1027,6 +1027,14 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
 
     // Private methods defined to exclude these from the builder and skip Lombok generating them.
     private Builder numExecutors(Integer numExecutors) {
+      throw new NotImplementedException();
+    }
+
+    private Builder maxNumInstancesToCreate(Integer maxNumInstancesToCreate) {
+      throw new NotImplementedException();
+    }
+
+    private Builder maxNumInstancesToPersist(Integer maxNumInstancesToPersist) {
       throw new NotImplementedException();
     }
 
