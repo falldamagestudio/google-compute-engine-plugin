@@ -16,14 +16,35 @@
 
 package com.google.jenkins.plugins.computeengine;
 
-import com.google.api.services.compute.Compute;
-import com.google.api.services.compute.model.Operation;
 import java.io.IOException;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.extern.java.Log;
+
+// Provides a Jenkins-side cache for GCE's "operations" for instances
+//
+// These operations are, for example, instance creation / destruction,
+//  and the log of such operations can be listed via `gcloud compute instances list --zone=<zone>`
+//
+// The operations cover the gap between the plugin requesting an instance to be created,
+//  and the instance being present via the GCE APIs. The life cycle for an instance is kind of like this:
+//
+//
+//  Plugin calls GCE API                          Plugin calls GCE API
+//  v                                             v
+//  |--- Insert instance operation ---|           |--- Delete instance operation ---|
+//              |----------- Instance is visible via API ----------------|
+//
+//
+// The tracking is designed to work without polling or subscribing to events:
+// The plugin code will manually enqueue important operations into one of these trackers
+//  by calling add(..) at the time that the API call is performed.
+// Later, when the plugin wants to check 'which operations are still in progress?',
+//  the plugin first has to call removeCompleted(). That call will talk to the GCE backend,
+//  check the status of all operations, and remove those that are already done.
+// After this, the plugin can access the cached state via get().
 
 @Log
 public class InstanceOperationTracker {
@@ -71,19 +92,13 @@ public class InstanceOperationTracker {
     log.fine("Instance operation added: " + instanceOperation.getName());
   }
 
-  protected Operation getZoneOperation(String zone, String operation) throws IOException {
-    Compute compute = cloud.getCompute();
-
-    Compute.ZoneOperations.Get request =
-        compute.zoneOperations().get(cloud.getProjectId(), zone, operation);
-    Operation response = request.execute();
-
-    return response;
-  }
-
   protected boolean isZoneOperationDone(String zone, String operation) {
     try {
-      return getZoneOperation(zone, operation).getStatus().equals("DONE");
+      return cloud
+          .getClient2()
+          .getZoneOperation(cloud.getProjectId(), zone, operation)
+          .getStatus()
+          .equals("DONE");
     } catch (IOException ioException) {
       log.warning("getZoneOperation exception: " + ioException.toString());
       return false;

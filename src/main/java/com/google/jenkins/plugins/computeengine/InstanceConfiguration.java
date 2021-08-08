@@ -19,7 +19,6 @@ package com.google.jenkins.plugins.computeengine;
 import static com.google.cloud.graphite.platforms.plugin.client.util.ClientUtil.nameFromSelfLink;
 import static com.google.jenkins.plugins.computeengine.ComputeEngineCloud.checkPermissions;
 
-import com.google.api.services.compute.Compute;
 import com.google.api.services.compute.model.AcceleratorConfig;
 import com.google.api.services.compute.model.AccessConfig;
 import com.google.api.services.compute.model.AttachedDisk;
@@ -334,13 +333,13 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
                 new InstanceOperationTracker.InstanceOperation(
                     instance.getName(), instance.getZone(), namePrefix, operation.getName()));
       } else {
-        Compute compute = cloud.getCompute();
-        Compute.Instances.Start request =
-            compute
-                .instances()
-                .start(
+
+        operation =
+            cloud
+                .getClient2()
+                .startInstance(
                     cloud.getProjectId(), nameFromSelfLink(instance.getZone()), instance.getName());
-        operation = request.execute();
+
         log.info("Sent start request for instance [" + instance.getName() + "]");
       }
       String targetRemoteFs = this.remoteFs;

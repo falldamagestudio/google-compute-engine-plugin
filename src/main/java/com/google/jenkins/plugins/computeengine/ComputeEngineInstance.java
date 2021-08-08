@@ -18,7 +18,6 @@ package com.google.jenkins.plugins.computeengine;
 
 import static com.google.cloud.graphite.platforms.plugin.client.util.ClientUtil.nameFromSelfLink;
 
-import com.google.api.services.compute.Compute;
 import com.google.api.services.compute.model.Instance;
 import com.google.api.services.compute.model.Operation;
 import com.google.cloud.graphite.platforms.plugin.client.ComputeClient.OperationException;
@@ -117,15 +116,6 @@ public class ComputeEngineInstance extends AbstractCloudSlave {
   @Override
   public AbstractCloudComputer createComputer() {
     return new ComputeEngineComputer(this);
-  }
-
-  protected Operation stopAsync(String project, String zone, String name) throws IOException {
-    ComputeEngineCloud cloud = getCloud();
-    Compute compute = cloud.getCompute();
-
-    Compute.Instances.Stop request = compute.instances().stop(project, zone, name);
-    Operation response = request.execute();
-    return response;
   }
 
   private void _terminateThreadedWork(Operation stopResponse) {
@@ -267,7 +257,8 @@ public class ComputeEngineInstance extends AbstractCloudSlave {
 
       LOGGER.log(Level.INFO, "Stopping instance {0}", new Object[] {name});
 
-      Operation stopResponse = stopAsync(cloud.getProjectId(), nameFromSelfLink(zone), name);
+      Operation stopResponse =
+          cloud.getClient2().stopInstance(cloud.getProjectId(), nameFromSelfLink(zone), name);
 
       Computer.threadPoolForRemoting.submit(
           () -> {

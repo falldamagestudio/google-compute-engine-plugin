@@ -19,10 +19,9 @@ package com.google.jenkins.plugins.computeengine;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.ArgumentMatchers.anyString;
 
-import com.google.api.services.compute.Compute;
 import com.google.api.services.compute.model.Operation;
+import com.google.jenkins.plugins.computeengine.client.ComputeClient2;
 import java.util.Set;
 import org.junit.Rule;
 import org.junit.Test;
@@ -63,8 +62,9 @@ public class InstanceOperationTrackerTest {
   public void removesCompletedOperations() throws Exception {
 
     ComputeEngineCloud cloud = Mockito.mock(ComputeEngineCloud.class);
-    Compute compute = Mockito.mock(Compute.class);
-    Mockito.when(cloud.getCompute()).thenReturn(compute);
+    ComputeClient2 client2 = Mockito.mock(ComputeClient2.class);
+    Mockito.when(cloud.getProjectId()).thenReturn("test-project");
+    Mockito.when(cloud.getClient2()).thenReturn(client2);
 
     InstanceOperationTracker instanceOperationTracker = new InstanceOperationTracker(cloud);
 
@@ -75,20 +75,15 @@ public class InstanceOperationTrackerTest {
     InstanceOperationTracker.InstanceOperation instanceOperation3 =
         new InstanceOperationTracker.InstanceOperation("instance3", "zone3", "prefix3", "abcd");
 
-    Compute.ZoneOperations zoneOperations = Mockito.mock(Compute.ZoneOperations.class);
-    Mockito.when(compute.zoneOperations()).thenReturn(zoneOperations);
-
-    Compute.ZoneOperations.Get zoneOperationsGet = Mockito.mock(Compute.ZoneOperations.Get.class);
-    // Mockito.when(zoneOperations.get(anyString(), anyString(), anyString()))
-    //     .thenReturn(zoneOperationsGet);
-    Mockito.when(zoneOperations.get(anyString(), anyString(), anyString()))
-        .thenThrow(new RuntimeException("uhoh2"));
-    // TODO: make the above exception trigger
-
-    Operation zoneOperationsGetOperation = Mockito.mock(Operation.class);
-    Mockito.when(zoneOperationsGet.execute()).thenReturn(zoneOperationsGetOperation);
-
-    Mockito.when(zoneOperationsGetOperation.getStatus()).thenReturn("DONE");
+    Operation zoneOperationsGetOperation1 = Mockito.mock(Operation.class);
+    Mockito.when(client2.getZoneOperation("test-project", "zone1", "1234"))
+        .thenReturn(zoneOperationsGetOperation1);
+    Operation zoneOperationsGetOperation2 = Mockito.mock(Operation.class);
+    Mockito.when(client2.getZoneOperation("test-project", "zone2", "5678"))
+        .thenReturn(zoneOperationsGetOperation2);
+    Operation zoneOperationsGetOperation3 = Mockito.mock(Operation.class);
+    Mockito.when(client2.getZoneOperation("test-project", "zone3", "abcd"))
+        .thenReturn(zoneOperationsGetOperation3);
 
     instanceOperationTracker.add(instanceOperation1);
     instanceOperationTracker.add(instanceOperation2);
@@ -107,15 +102,34 @@ public class InstanceOperationTrackerTest {
 
     // One of the operations is complete: removes operation
 
+    Mockito.when(zoneOperationsGetOperation1.getStatus()).thenReturn("RUNNING");
+    Mockito.when(zoneOperationsGetOperation2.getStatus()).thenReturn("DONE");
+    Mockito.when(zoneOperationsGetOperation3.getStatus())
+        .thenThrow(new RuntimeException("instance 3 has not yet been added"));
+
     instanceOperationTracker.removeCompleted();
 
     {
       Set<InstanceOperationTracker.InstanceOperation> instanceOperations =
           instanceOperationTracker.get();
 
-      assertEquals(2, instanceOperations.size());
+      assertEquals(1, instanceOperations.size());
       assertTrue(instanceOperations.contains(instanceOperation1));
-      assertTrue(instanceOperations.contains(instanceOperation2));
+      assertFalse(instanceOperations.contains(instanceOperation2));
+      assertFalse(instanceOperations.contains(instanceOperation3));
+    }
+
+    // Repeating when there have been no changes, has no effect
+
+    instanceOperationTracker.removeCompleted();
+
+    {
+      Set<InstanceOperationTracker.InstanceOperation> instanceOperations =
+          instanceOperationTracker.get();
+
+      assertEquals(1, instanceOperations.size());
+      assertTrue(instanceOperations.contains(instanceOperation1));
+      assertFalse(instanceOperations.contains(instanceOperation2));
       assertFalse(instanceOperations.contains(instanceOperation3));
     }
   }

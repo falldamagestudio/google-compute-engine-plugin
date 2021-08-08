@@ -30,6 +30,7 @@ import com.google.cloud.graphite.platforms.plugin.client.ComputeClient;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableMap;
 import com.google.jenkins.plugins.computeengine.client.ClientUtil;
+import com.google.jenkins.plugins.computeengine.client.ComputeClient2;
 import com.google.jenkins.plugins.computeengine.client.ComputeFactory;
 import com.google.jenkins.plugins.credentials.oauth.GoogleOAuth2Credentials;
 import hudson.Extension;
@@ -96,6 +97,7 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
   private List<InstanceConfiguration> configurations;
 
   private transient volatile ComputeClient client;
+  private transient volatile ComputeClient2 client2;
   private transient volatile Compute compute;
   private boolean noDelayProvisioning;
 
@@ -222,6 +224,10 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
     }
   }
 
+  private ComputeClient2 createClient2() {
+    return new ComputeClient2(getCompute());
+  }
+
   /**
    * Returns GCP client for that cloud.
    *
@@ -252,6 +258,22 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
       }
     }
     return compute;
+  }
+
+  /**
+   * Returns GCP client 2 (additional methods) for that cloud.
+   *
+   * @return GCP client 2 object.
+   */
+  public ComputeClient2 getClient2() {
+    if (client2 == null) {
+      synchronized (this) {
+        if (client2 == null) {
+          client2 = createClient2();
+        }
+      }
+    }
+    return client2;
   }
 
   /**
