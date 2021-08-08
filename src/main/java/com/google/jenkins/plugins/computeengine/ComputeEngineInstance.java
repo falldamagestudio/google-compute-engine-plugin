@@ -32,11 +32,14 @@ import hudson.slaves.AbstractCloudSlave;
 import hudson.slaves.ComputerLauncher;
 import hudson.slaves.RetentionStrategy;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import java.util.stream.Stream;
+import java.util.stream.Collectors;
 import javax.annotation.Nullable;
 import jenkins.model.Jenkins;
 import lombok.Builder;
@@ -160,14 +163,31 @@ public class ComputeEngineInstance extends AbstractCloudSlave {
 
     InstanceConfiguration instanceConfiguration = getInstanceConfiguration();
     if (instanceConfiguration != null) {
-      Stream<Instance> allInstances = cloud.getAllInstances();
-      InstanceConfigurationPrioritizer instanceConfigurationPrioritizer =
-          cloud.getInstanceConfigurationPrioritizer();
-      Stream<Instance> instancesForConfig =
-          instanceConfigurationPrioritizer.filterInstancesForConfig(
-              instanceConfiguration, allInstances);
+
+      InstanceOperationTracker instanceInsertOperationTracker =
+          cloud.getInstanceInsertOperationTracker();
+      InstanceOperationTracker instanceDeleteOperationTracker =
+          cloud.getInstanceDeleteOperationTracker();
+      instanceInsertOperationTracker.removeCompleted();
+      instanceDeleteOperationTracker.removeCompleted();
+      Set<InstanceOperationTracker.InstanceOperation> insertsInProgress =
+          instanceInsertOperationTracker.get();
+      Set<InstanceOperationTracker.InstanceOperation> deletesInProgress =
+          instanceDeleteOperationTracker.get();
+
+      Set<Instance> allInstances = cloud.getAllInstances().collect(Collectors.toSet());
+
+      Map<InstanceConfiguration, Integer> projectedInstanceCountPerConfig =
+          cloud
+              .getInstanceConfigurationPrioritizer()
+              .getProjectedInstanceCountPerConfig(
+                  Arrays.asList(new InstanceConfiguration[] {instanceConfiguration}),
+                  allInstances,
+                  insertsInProgress,
+                  deletesInProgress);
+
       int maxNumInstancesToPersist = instanceConfiguration.getMaxNumInstancesToPersist();
-      long numInstancesForConfig = instancesForConfig.count();
+      long numInstancesForConfig = projectedInstanceCountPerConfig.get(instanceConfiguration);
       persist = (maxNumInstancesToPersist >= numInstancesForConfig);
       LOGGER.log(
           Level.INFO,
@@ -198,6 +218,14 @@ public class ComputeEngineInstance extends AbstractCloudSlave {
       try {
         terminateResponse =
             cloud.getClient().terminateInstanceAsync(cloud.getProjectId(), zone, name);
+        cloud
+            .getInstanceDeleteOperationTracker()
+            .add(
+                new InstanceOperationTracker.InstanceOperation(
+                    name,
+                    zone,
+                    instanceConfiguration.getNamePrefix(),
+                    terminateResponse.getName()));
       } catch (IOException e) {
         LOGGER.info(
             String.format("Delete failed while issuing operation to complete. IOException"));
