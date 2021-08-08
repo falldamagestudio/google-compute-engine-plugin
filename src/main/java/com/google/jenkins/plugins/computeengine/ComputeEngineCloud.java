@@ -102,7 +102,10 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
   private InstanceConfigurationPrioritizer instanceConfigurationPrioritizer =
       new InstanceConfigurationPrioritizer();
 
-  private InstanceOperationTracker instanceOperationTracker =
+  private InstanceOperationTracker instanceInsertOperationTracker =
+      new InstanceOperationTracker(this);
+
+  private InstanceOperationTracker instanceDeleteOperationTracker =
       new InstanceOperationTracker(this);
 
   @DataBoundConstructor
@@ -369,11 +372,12 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
           break;
         }
 
-        instanceOperationTracker.update();
+        instanceInsertOperationTracker.removeCompleted();
+        instanceDeleteOperationTracker.removeCompleted();
         Set<InstanceOperationTracker.InstanceOperation> insertsInProgress =
-            instanceOperationTracker.getInserts();
+            instanceInsertOperationTracker.get();
         Set<InstanceOperationTracker.InstanceOperation> deletesInProgress =
-            instanceOperationTracker.getDeletes();
+            instanceDeleteOperationTracker.get();
 
         Stream<String> allNodes = getAllNodes();
         Set<Instance> allInstances = getAllInstances().collect(Collectors.toSet());
@@ -532,8 +536,12 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
     return instanceConfigurationPrioritizer;
   }
 
-  public InstanceOperationTracker getInstanceOperationTracker() {
-    return instanceOperationTracker;
+  public InstanceOperationTracker getInstanceInsertOperationTracker() {
+    return instanceInsertOperationTracker;
+  }
+
+  public InstanceOperationTracker getInstanceDeleteOperationTracker() {
+    return instanceDeleteOperationTracker;
   }
 
   /** Gets {@link InstanceConfiguration} that has the matching Name. */
@@ -570,11 +578,12 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
 
     List<InstanceConfiguration> configs = Arrays.asList(new InstanceConfiguration[] {c});
 
-    instanceOperationTracker.update();
+    instanceInsertOperationTracker.removeCompleted();
+    instanceDeleteOperationTracker.removeCompleted();
     Set<InstanceOperationTracker.InstanceOperation> insertsInProgress =
-        instanceOperationTracker.getPendingInserts();
+        instanceInsertOperationTracker.get();
     Set<InstanceOperationTracker.InstanceOperation> deletesInProgress =
-        instanceOperationTracker.getPendingDeletes();
+        instanceDeleteOperationTracker.get();
 
     Stream<String> allNodes = getAllNodes();
     Set<Instance> allInstances = getAllInstances().collect(Collectors.toSet());

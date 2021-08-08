@@ -57,8 +57,7 @@ public class InstanceOperationTracker {
     }
   };
 
-  private Set<InstanceOperation> inserts;
-  private Set<InstanceOperation> deletes;
+  private Set<InstanceOperation> operations;
 
   private ComputeEngineCloud cloud;
 
@@ -66,14 +65,9 @@ public class InstanceOperationTracker {
     this.cloud = cloud;
   }
 
-  public void enqueueInsert(InstanceOperation instanceOperation) {
-    inserts.add(instanceOperation);
-    log.fine("Instance insert operation started: " + instanceOperation.getName());
-  }
-
-  public void enqueueDelete(InstanceOperation instanceOperation) {
-    deletes.add(instanceOperation);
-    log.fine("Instance delete operation started: " + instanceOperation.getName());
+  public void add(InstanceOperation instanceOperation) {
+    operations.add(instanceOperation);
+    log.fine("Instance operation added: " + instanceOperation.getName());
   }
 
   protected Operation getZoneOperation(String zone, String operation) throws IOException {
@@ -95,7 +89,8 @@ public class InstanceOperationTracker {
     }
   }
 
-  private Set<InstanceOperation> removeCompletedOperations(Set<InstanceOperation> oldPendingInstances) {
+  private Set<InstanceOperation> removeCompletedOperations(
+      Set<InstanceOperation> oldPendingInstances) {
 
     Set<InstanceOperation> newPendingInstances =
         oldPendingInstances.stream()
@@ -108,41 +103,22 @@ public class InstanceOperationTracker {
     return newPendingInstances;
   }
 
-  public void update() {
+  public void removeCompleted() {
 
-    Set<InstanceOperation> newInserts = removeCompletedOperations(inserts);
-    Set<InstanceOperation> newDeletes = removeCompletedOperations(deletes);
+    Set<InstanceOperation> newOperations = removeCompletedOperations(operations);
 
-    List<String> completedInsertNames =
-        inserts.stream()
-            .filter(instanceOperation -> !newInserts.contains(instanceOperation))
+    List<String> completedNames =
+        operations.stream()
+            .filter(instanceOperation -> !newOperations.contains(instanceOperation))
             .map(instanceOperation -> instanceOperation.getName())
             .collect(Collectors.toList());
-    List<String> completedDeleteNames =
-        deletes.stream()
-            .filter(instanceOperation -> !newDeletes.contains(instanceOperation))
-            .map(instanceOperation -> instanceOperation.getName())
-            .collect(Collectors.toList());
-    if (!completedInsertNames.isEmpty())
-      log.fine(
-          "Instance insert operations completed: ["
-              + String.join(", ", completedInsertNames)
-              + "]");
-    if (!completedDeleteNames.isEmpty())
-      log.fine(
-          "Instance delete operations completed: ["
-              + String.join(", ", completedDeleteNames)
-              + "]");
+    if (!completedNames.isEmpty())
+      log.fine("Instance operations completed: [" + String.join(", ", completedNames) + "]");
 
-    inserts = newInserts;
-    deletes = newDeletes;
+    operations = newOperations;
   }
 
-  public Set<InstanceOperation> getInserts() {
-    return inserts;
-  }
-
-  public Set<InstanceOperation> getDeletes() {
-    return deletes;
+  public Set<InstanceOperation> get() {
+    return operations;
   }
 }

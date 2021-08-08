@@ -234,7 +234,8 @@ public class InstanceConfigurationPrioritizer {
     for (InstanceConfiguration config : configs) {
       instancesPerConfig.put(
           config,
-          getProjectedInstanceNamesForConfig(config, allInstances, insertsInProgress, deletesInProgress)
+          getProjectedInstanceNamesForConfig(
+                  config, allInstances, insertsInProgress, deletesInProgress)
               .size());
     }
 
