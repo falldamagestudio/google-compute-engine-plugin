@@ -29,7 +29,8 @@ import lombok.extern.java.Log;
 //  and the log of such operations can be listed via `gcloud compute instances list --zone=<zone>`
 //
 // The operations cover the gap between the plugin requesting an instance to be created,
-//  and the instance being present via the GCE APIs. The life cycle for an instance is kind of like this:
+//  and the instance being present via the GCE APIs. The life cycle for an instance is kind of like
+// this:
 //
 //
 //  Plugin calls GCE API                          Plugin calls GCE API
@@ -88,7 +89,9 @@ public class InstanceOperationTracker {
   }
 
   public void add(InstanceOperation instanceOperation) {
-    operations.add(instanceOperation);
+    synchronized (this) {
+      operations.add(instanceOperation);
+    }
     log.fine("Instance operation added: " + instanceOperation.getName());
   }
 
@@ -121,17 +124,19 @@ public class InstanceOperationTracker {
 
   public void removeCompleted() {
 
-    Set<InstanceOperation> newOperations = removeCompletedOperations(operations);
+    synchronized (this) {
+      Set<InstanceOperation> newOperations = removeCompletedOperations(operations);
 
-    List<String> completedNames =
-        operations.stream()
-            .filter(instanceOperation -> !newOperations.contains(instanceOperation))
-            .map(instanceOperation -> instanceOperation.getName())
-            .collect(Collectors.toList());
-    if (!completedNames.isEmpty())
-      log.fine("Instance operations completed: [" + String.join(", ", completedNames) + "]");
+      List<String> completedNames =
+          operations.stream()
+              .filter(instanceOperation -> !newOperations.contains(instanceOperation))
+              .map(instanceOperation -> instanceOperation.getName())
+              .collect(Collectors.toList());
+      if (!completedNames.isEmpty())
+        log.fine("Instance operations completed: [" + String.join(", ", completedNames) + "]");
 
-    operations = newOperations;
+      operations = newOperations;
+    }
   }
 
   public Set<InstanceOperation> get() {
