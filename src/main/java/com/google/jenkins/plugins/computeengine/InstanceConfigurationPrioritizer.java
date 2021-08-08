@@ -169,15 +169,20 @@ public class InstanceConfigurationPrioritizer {
     return null;
   }
 
-  // Given a config, and a stream of instances,
-  //  return those instances that are associated with that config
+  // Given a config, and a stream of instance operations,
+  //  return those instance operations that are associated with that config
 
-  Stream<InstanceOperationTracker.InstanceOperation> filterPendingInstancesForConfig(
+  Stream<InstanceOperationTracker.InstanceOperation> filterInstanceOperationsForConfig(
       InstanceConfiguration config,
       Stream<InstanceOperationTracker.InstanceOperation> instanceOperations) {
     return instanceOperations.filter(
         instanceOperation -> instanceOperation.getNamePrefix().equals(config.getNamePrefix()));
   }
+
+  // Given a config, a set of instances,
+  //  and sets of insert & delete operations in progress
+  //  return names of the instances associated with that config that will
+  //  exist once the insert & delete operations have completed
 
   Set<String> getProjectedInstanceNamesForConfig(
       InstanceConfiguration config,
@@ -191,14 +196,14 @@ public class InstanceConfigurationPrioritizer {
         currentInstancesForConfig.map(instance -> instance.getName()).collect(Collectors.toSet());
 
     Stream<InstanceOperationTracker.InstanceOperation> insertsInProgressForConfig =
-        filterPendingInstancesForConfig(config, insertsInProgress.stream());
+        filterInstanceOperationsForConfig(config, insertsInProgress.stream());
     Set<String> insertNamesInProgressForConfig =
         insertsInProgressForConfig
             .map(instanceOperation -> instanceOperation.getName())
             .collect(Collectors.toSet());
 
     Stream<InstanceOperationTracker.InstanceOperation> deletesInProgressForConfig =
-        filterPendingInstancesForConfig(config, deletesInProgress.stream());
+        filterInstanceOperationsForConfig(config, deletesInProgress.stream());
     Set<String> deleteNamesInProgressForConfig =
         deletesInProgressForConfig
             .map(instanceOperation -> instanceOperation.getName())
@@ -211,6 +216,11 @@ public class InstanceConfigurationPrioritizer {
 
     return projectedInstanceNamesForConfig;
   }
+
+  // Given a list of configs, a set of instances,
+  //  and sets of insert & delete operations in progress
+  //  return how many instances that will be active for each config
+  //  once the insert & delete operations have completed
 
   public Map<InstanceConfiguration, Integer> getProjectedInstanceCountPerConfig(
       List<InstanceConfiguration> configs,
