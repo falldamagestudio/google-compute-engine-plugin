@@ -102,8 +102,8 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
   private InstanceConfigurationPrioritizer instanceConfigurationPrioritizer =
       new InstanceConfigurationPrioritizer();
 
-  private PendingInstanceInsertsAndDeletes pendingInstanceInsertsAndDeletes =
-      new PendingInstanceInsertsAndDeletes(this);
+  private InstanceOperationTracker instanceOperationTracker =
+      new InstanceOperationTracker(this);
 
   @DataBoundConstructor
   public ComputeEngineCloud(
@@ -369,17 +369,17 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
           break;
         }
 
-        pendingInstanceInsertsAndDeletes.refresh();
-        Set<PendingInstanceInsertsAndDeletes.PendingInstance> pendingInserts =
-            pendingInstanceInsertsAndDeletes.getPendingInserts();
-        Set<PendingInstanceInsertsAndDeletes.PendingInstance> pendingDeletes =
-            pendingInstanceInsertsAndDeletes.getPendingDeletes();
+        instanceOperationTracker.update();
+        Set<InstanceOperationTracker.InstanceOperation> insertsInProgress =
+            instanceOperationTracker.getInserts();
+        Set<InstanceOperationTracker.InstanceOperation> deletesInProgress =
+            instanceOperationTracker.getDeletes();
 
         Stream<String> allNodes = getAllNodes();
         Set<Instance> allInstances = getAllInstances().collect(Collectors.toSet());
         Map<InstanceConfiguration, Integer> projectedInstanceCountPerConfig =
             instanceConfigurationPrioritizer.getProjectedInstanceCountPerConfig(
-                configs, allInstances, pendingInserts, pendingDeletes);
+                configs, allInstances, insertsInProgress, deletesInProgress);
         List<Instance> provisionableInstances =
             filterProvisionableInstances(allNodes, allInstances.stream())
                 .collect(Collectors.toList());
@@ -532,8 +532,8 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
     return instanceConfigurationPrioritizer;
   }
 
-  public PendingInstanceInsertsAndDeletes getPendingInstanceInsertsAndDeletes() {
-    return pendingInstanceInsertsAndDeletes;
+  public InstanceOperationTracker getInstanceOperationTracker() {
+    return instanceOperationTracker;
   }
 
   /** Gets {@link InstanceConfiguration} that has the matching Name. */
@@ -570,17 +570,17 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
 
     List<InstanceConfiguration> configs = Arrays.asList(new InstanceConfiguration[] {c});
 
-    pendingInstanceInsertsAndDeletes.refresh();
-    Set<PendingInstanceInsertsAndDeletes.PendingInstance> pendingInserts =
-        pendingInstanceInsertsAndDeletes.getPendingInserts();
-    Set<PendingInstanceInsertsAndDeletes.PendingInstance> pendingDeletes =
-        pendingInstanceInsertsAndDeletes.getPendingDeletes();
+    instanceOperationTracker.update();
+    Set<InstanceOperationTracker.InstanceOperation> insertsInProgress =
+        instanceOperationTracker.getPendingInserts();
+    Set<InstanceOperationTracker.InstanceOperation> deletesInProgress =
+        instanceOperationTracker.getPendingDeletes();
 
     Stream<String> allNodes = getAllNodes();
     Set<Instance> allInstances = getAllInstances().collect(Collectors.toSet());
     Map<InstanceConfiguration, Integer> projectedInstanceCountPerConfig =
         instanceConfigurationPrioritizer.getProjectedInstanceCountPerConfig(
-            configs, allInstances, pendingInserts, pendingDeletes);
+            configs, allInstances, insertsInProgress, deletesInProgress);
     List<Instance> provisionableInstances =
         filterProvisionableInstances(allNodes, allInstances.stream()).collect(Collectors.toList());
     InstanceConfigurationPrioritizer.ConfigAndInstance configAndInstance =

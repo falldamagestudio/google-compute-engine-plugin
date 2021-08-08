@@ -25,15 +25,15 @@ import java.util.stream.Collectors;
 import lombok.extern.java.Log;
 
 @Log
-public class PendingInstanceInsertsAndDeletes {
+public class InstanceOperationTracker {
 
-  public static class PendingInstance {
+  public static class InstanceOperation {
     private String name;
     private String zone;
     private String namePrefix;
     private String operationId;
 
-    public PendingInstance(String name, String zone, String namePrefix, String operationId) {
+    public InstanceOperation(String name, String zone, String namePrefix, String operationId) {
       this.name = name;
       this.zone = zone;
       this.namePrefix = namePrefix;
@@ -57,23 +57,23 @@ public class PendingInstanceInsertsAndDeletes {
     }
   };
 
-  private Set<PendingInstance> pendingInserts;
-  private Set<PendingInstance> pendingDeletes;
+  private Set<InstanceOperation> inserts;
+  private Set<InstanceOperation> deletes;
 
   private ComputeEngineCloud cloud;
 
-  public PendingInstanceInsertsAndDeletes(ComputeEngineCloud cloud) {
+  public InstanceOperationTracker(ComputeEngineCloud cloud) {
     this.cloud = cloud;
   }
 
-  public void enqueueInsert(PendingInstance pendingInstance) {
-    pendingInserts.add(pendingInstance);
-    log.fine("Instance insert operation started: " + pendingInstance.getName());
+  public void enqueueInsert(InstanceOperation instanceOperation) {
+    inserts.add(instanceOperation);
+    log.fine("Instance insert operation started: " + instanceOperation.getName());
   }
 
-  public void enqueueDelete(PendingInstance pendingInstance) {
-    pendingDeletes.add(pendingInstance);
-    log.fine("Instance delete operation started: " + pendingInstance.getName());
+  public void enqueueDelete(InstanceOperation instanceOperation) {
+    deletes.add(instanceOperation);
+    log.fine("Instance delete operation started: " + instanceOperation.getName());
   }
 
   protected Operation getZoneOperation(String zone, String operation) throws IOException {
@@ -95,33 +95,33 @@ public class PendingInstanceInsertsAndDeletes {
     }
   }
 
-  private Set<PendingInstance> refresh(Set<PendingInstance> oldPendingInstances) {
+  private Set<InstanceOperation> removeCompletedOperations(Set<InstanceOperation> oldPendingInstances) {
 
-    Set<PendingInstance> newPendingInstances =
+    Set<InstanceOperation> newPendingInstances =
         oldPendingInstances.stream()
             .filter(
-                pendingInstance ->
+                instanceOperation ->
                     !isZoneOperationDone(
-                        pendingInstance.getZone(), pendingInstance.getOperationId()))
+                        instanceOperation.getZone(), instanceOperation.getOperationId()))
             .collect(Collectors.toSet());
 
     return newPendingInstances;
   }
 
-  public void refresh() {
+  public void update() {
 
-    Set<PendingInstance> newPendingInserts = refresh(pendingInserts);
-    Set<PendingInstance> newPendingDeletes = refresh(pendingDeletes);
+    Set<InstanceOperation> newInserts = removeCompletedOperations(inserts);
+    Set<InstanceOperation> newDeletes = removeCompletedOperations(deletes);
 
     List<String> completedInsertNames =
-        pendingInserts.stream()
-            .filter(pendingInstance -> !newPendingInserts.contains(pendingInstance))
-            .map(pendingInstance -> pendingInstance.getName())
+        inserts.stream()
+            .filter(instanceOperation -> !newInserts.contains(instanceOperation))
+            .map(instanceOperation -> instanceOperation.getName())
             .collect(Collectors.toList());
     List<String> completedDeleteNames =
-        pendingDeletes.stream()
-            .filter(pendingInstance -> !newPendingDeletes.contains(pendingInstance))
-            .map(pendingInstance -> pendingInstance.getName())
+        deletes.stream()
+            .filter(instanceOperation -> !newDeletes.contains(instanceOperation))
+            .map(instanceOperation -> instanceOperation.getName())
             .collect(Collectors.toList());
     if (!completedInsertNames.isEmpty())
       log.fine(
@@ -134,15 +134,15 @@ public class PendingInstanceInsertsAndDeletes {
               + String.join(", ", completedDeleteNames)
               + "]");
 
-    pendingInserts = newPendingInserts;
-    pendingDeletes = newPendingDeletes;
+    inserts = newInserts;
+    deletes = newDeletes;
   }
 
-  public Set<PendingInstance> getPendingInserts() {
-    return pendingInserts;
+  public Set<InstanceOperation> getInserts() {
+    return inserts;
   }
 
-  public Set<PendingInstance> getPendingDeletes() {
-    return pendingDeletes;
+  public Set<InstanceOperation> getDeletes() {
+    return deletes;
   }
 }

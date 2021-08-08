@@ -172,42 +172,42 @@ public class InstanceConfigurationPrioritizer {
   // Given a config, and a stream of instances,
   //  return those instances that are associated with that config
 
-  Stream<PendingInstanceInsertsAndDeletes.PendingInstance> filterPendingInstancesForConfig(
+  Stream<InstanceOperationTracker.InstanceOperation> filterPendingInstancesForConfig(
       InstanceConfiguration config,
-      Stream<PendingInstanceInsertsAndDeletes.PendingInstance> pendingInstances) {
-    return pendingInstances.filter(
-        pendingInstance -> pendingInstance.getNamePrefix().equals(config.getNamePrefix()));
+      Stream<InstanceOperationTracker.InstanceOperation> instanceOperations) {
+    return instanceOperations.filter(
+        instanceOperation -> instanceOperation.getNamePrefix().equals(config.getNamePrefix()));
   }
 
   Set<String> getProjectedInstanceNamesForConfig(
       InstanceConfiguration config,
       Set<Instance> allInstances,
-      Set<PendingInstanceInsertsAndDeletes.PendingInstance> pendingInserts,
-      Set<PendingInstanceInsertsAndDeletes.PendingInstance> pendingDeletes) {
+      Set<InstanceOperationTracker.InstanceOperation> insertsInProgress,
+      Set<InstanceOperationTracker.InstanceOperation> deletesInProgress) {
 
     Stream<Instance> currentInstancesForConfig =
         filterInstancesForConfig(config, allInstances.stream());
     Set<String> currentInstanceNamesForConfig =
         currentInstancesForConfig.map(instance -> instance.getName()).collect(Collectors.toSet());
 
-    Stream<PendingInstanceInsertsAndDeletes.PendingInstance> pendingInsertsForConfig =
-        filterPendingInstancesForConfig(config, pendingInserts.stream());
-    Set<String> pendingInsertNamesForConfig =
-        pendingInsertsForConfig
-            .map(pendingInstance -> pendingInstance.getName())
+    Stream<InstanceOperationTracker.InstanceOperation> insertsInProgressForConfig =
+        filterPendingInstancesForConfig(config, insertsInProgress.stream());
+    Set<String> insertNamesInProgressForConfig =
+        insertsInProgressForConfig
+            .map(instanceOperation -> instanceOperation.getName())
             .collect(Collectors.toSet());
 
-    Stream<PendingInstanceInsertsAndDeletes.PendingInstance> pendingDeletesForConfig =
-        filterPendingInstancesForConfig(config, pendingDeletes.stream());
-    Set<String> pendingDeleteNamesForConfig =
-        pendingDeletesForConfig
-            .map(pendingInstance -> pendingInstance.getName())
+    Stream<InstanceOperationTracker.InstanceOperation> deletesInProgressForConfig =
+        filterPendingInstancesForConfig(config, deletesInProgress.stream());
+    Set<String> deleteNamesInProgressForConfig =
+        deletesInProgressForConfig
+            .map(instanceOperation -> instanceOperation.getName())
             .collect(Collectors.toSet());
 
     Set<String> projectedInstanceNamesForConfig =
         new HashSet<String>(currentInstanceNamesForConfig);
-    projectedInstanceNamesForConfig.addAll(pendingInsertNamesForConfig);
-    projectedInstanceNamesForConfig.removeAll(pendingDeleteNamesForConfig);
+    projectedInstanceNamesForConfig.addAll(insertNamesInProgressForConfig);
+    projectedInstanceNamesForConfig.removeAll(deleteNamesInProgressForConfig);
 
     return projectedInstanceNamesForConfig;
   }
@@ -215,8 +215,8 @@ public class InstanceConfigurationPrioritizer {
   public Map<InstanceConfiguration, Integer> getProjectedInstanceCountPerConfig(
       List<InstanceConfiguration> configs,
       Set<Instance> allInstances,
-      Set<PendingInstanceInsertsAndDeletes.PendingInstance> pendingInserts,
-      Set<PendingInstanceInsertsAndDeletes.PendingInstance> pendingDeletes) {
+      Set<InstanceOperationTracker.InstanceOperation> insertsInProgress,
+      Set<InstanceOperationTracker.InstanceOperation> deletesInProgress) {
 
     Map<InstanceConfiguration, Integer> instancesPerConfig =
         new HashMap<InstanceConfiguration, Integer>();
@@ -224,7 +224,7 @@ public class InstanceConfigurationPrioritizer {
     for (InstanceConfiguration config : configs) {
       instancesPerConfig.put(
           config,
-          getProjectedInstanceNamesForConfig(config, allInstances, pendingInserts, pendingDeletes)
+          getProjectedInstanceNamesForConfig(config, allInstances, insertsInProgress, deletesInProgress)
               .size());
     }
 
