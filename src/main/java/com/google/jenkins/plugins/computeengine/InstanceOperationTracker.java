@@ -19,6 +19,7 @@ package com.google.jenkins.plugins.computeengine;
 import com.google.api.services.compute.Compute;
 import com.google.api.services.compute.model.Operation;
 import java.io.IOException;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -57,7 +58,7 @@ public class InstanceOperationTracker {
     }
   };
 
-  private Set<InstanceOperation> operations;
+  private Set<InstanceOperation> operations = new HashSet<InstanceOperation>();
 
   private ComputeEngineCloud cloud;
 
