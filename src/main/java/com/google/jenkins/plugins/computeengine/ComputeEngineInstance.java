@@ -177,6 +177,25 @@ public class ComputeEngineInstance extends AbstractCloudSlave {
 
       Set<Instance> allInstances = cloud.getAllInstances().collect(Collectors.toSet());
 
+      LOGGER.fine(
+          "When deleting node, the following instances are visible in the GCE APIs: [ "
+              + String.join(
+                  ", ",
+                  allInstances.stream().map(instance -> instance.getName()).toArray(String[]::new))
+              + " ], the following instances have insert operations active: [ "
+              + String.join(
+                  ", ",
+                  insertsInProgress.stream()
+                      .map(instance -> instance.getName())
+                      .toArray(String[]::new))
+              + " ], the following instances have delete operations active: [ "
+              + String.join(
+                  ", ",
+                  deletesInProgress.stream()
+                      .map(instance -> instance.getName())
+                      .toArray(String[]::new))
+              + " ]");
+
       Map<InstanceConfiguration, Integer> projectedInstanceCountPerConfig =
           cloud
               .getInstanceConfigurationPrioritizer()

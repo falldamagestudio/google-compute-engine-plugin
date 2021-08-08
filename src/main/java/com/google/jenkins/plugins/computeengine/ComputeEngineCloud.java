@@ -403,6 +403,29 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
 
         Stream<String> allNodes = getAllNodes();
         Set<Instance> allInstances = getAllInstances().collect(Collectors.toSet());
+
+        log.log(
+            Level.FINE,
+            "When provisioning, the following instances are visible in the GCE APIs: [ "
+                + String.join(
+                    ", ",
+                    allInstances.stream()
+                        .map(instance -> instance.getName())
+                        .toArray(String[]::new))
+                + " ], the following instances have insert operations active: [ "
+                + String.join(
+                    ", ",
+                    insertsInProgress.stream()
+                        .map(instance -> instance.getName())
+                        .toArray(String[]::new))
+                + " ], the following instances have delete operations active: [ "
+                + String.join(
+                    ", ",
+                    deletesInProgress.stream()
+                        .map(instance -> instance.getName())
+                        .toArray(String[]::new))
+                + " ]");
+
         Map<InstanceConfiguration, Integer> projectedInstanceCountPerConfig =
             instanceConfigurationPrioritizer.getProjectedInstanceCountPerConfig(
                 configs, allInstances, insertsInProgress, deletesInProgress);
@@ -609,6 +632,27 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
 
     Stream<String> allNodes = getAllNodes();
     Set<Instance> allInstances = getAllInstances().collect(Collectors.toSet());
+
+    log.log(
+        Level.FINE,
+        "When provisioning, the following instances are visible in the GCE APIs: [ "
+            + String.join(
+                ", ",
+                allInstances.stream().map(instance -> instance.getName()).toArray(String[]::new))
+            + " ], the following instances have insert operations active: [ "
+            + String.join(
+                ", ",
+                insertsInProgress.stream()
+                    .map(instance -> instance.getName())
+                    .toArray(String[]::new))
+            + " ], the following instances have delete operations active: [ "
+            + String.join(
+                ", ",
+                deletesInProgress.stream()
+                    .map(instance -> instance.getName())
+                    .toArray(String[]::new))
+            + " ]");
+
     Map<InstanceConfiguration, Integer> projectedInstanceCountPerConfig =
         instanceConfigurationPrioritizer.getProjectedInstanceCountPerConfig(
             configs, allInstances, insertsInProgress, deletesInProgress);
