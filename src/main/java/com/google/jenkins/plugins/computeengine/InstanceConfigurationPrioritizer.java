@@ -17,7 +17,11 @@
 package com.google.jenkins.plugins.computeengine;
 
 import com.google.api.services.compute.model.Instance;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -90,18 +94,19 @@ public class InstanceConfigurationPrioritizer {
     return provisionableInstancesForConfig;
   }
 
-  // Given a list of configs, and a list of remote instances
+  // Given a list of configs, and a list of projected instance count for those configs
   //  return those configs that have capacity for at least one extra instance
 
   List<InstanceConfiguration> getConfigsWithSpareCapacity(
-      List<InstanceConfiguration> configs, List<Instance> instances) {
+      List<InstanceConfiguration> configs,
+      Map<InstanceConfiguration, Integer> projectedInstanceCountPerConfig) {
 
     List<InstanceConfiguration> configsWithSpareCapacity =
         configs.stream()
             .filter(
                 config ->
                     config.getMaxNumInstancesToCreate()
-                        > filterInstancesForConfig(config, instances.stream()).count())
+                        > projectedInstanceCountPerConfig.getOrDefault(config, 0))
             .collect(Collectors.toList());
     return configsWithSpareCapacity;
   }
@@ -129,8 +134,8 @@ public class InstanceConfigurationPrioritizer {
 
   public ConfigAndInstance getConfigAndInstance(
       List<InstanceConfiguration> configs,
-      List<Instance> allInstances,
-      List<Instance> provisionableInstances) {
+      List<Instance> provisionableInstances,
+      Map<InstanceConfiguration, Integer> projectedInstanceCountPerConfig) {
 
     // First, look for a config that has provisionable instances
     // If we find one, choose that config, plus a corresponding instance
@@ -154,7 +159,7 @@ public class InstanceConfigurationPrioritizer {
     // If we find one, choose that config, but leave the instance blank
 
     List<InstanceConfiguration> configsWithSpareCapacity =
-        getConfigsWithSpareCapacity(configs, allInstances);
+        getConfigsWithSpareCapacity(configs, projectedInstanceCountPerConfig);
     if (!configsWithSpareCapacity.isEmpty()) {
       return new ConfigAndInstance(chooseConfigFromList(configsWithSpareCapacity), null);
     }
@@ -162,5 +167,67 @@ public class InstanceConfigurationPrioritizer {
     // We did not find any suitable config
 
     return null;
+  }
+
+  // Given a config, and a stream of instances,
+  //  return those instances that are associated with that config
+
+  Stream<PendingInstanceInsertsAndDeletes.PendingInstance> filterPendingInstancesForConfig(
+      InstanceConfiguration config,
+      Stream<PendingInstanceInsertsAndDeletes.PendingInstance> pendingInstances) {
+    return pendingInstances.filter(
+        pendingInstance -> pendingInstance.getNamePrefix().equals(config.getNamePrefix()));
+  }
+
+  Set<String> getProjectedInstanceNamesForConfig(
+      InstanceConfiguration config,
+      Set<Instance> allInstances,
+      Set<PendingInstanceInsertsAndDeletes.PendingInstance> pendingInserts,
+      Set<PendingInstanceInsertsAndDeletes.PendingInstance> pendingDeletes) {
+
+    Stream<Instance> currentInstancesForConfig =
+        filterInstancesForConfig(config, allInstances.stream());
+    Set<String> currentInstanceNamesForConfig =
+        currentInstancesForConfig.map(instance -> instance.getName()).collect(Collectors.toSet());
+
+    Stream<PendingInstanceInsertsAndDeletes.PendingInstance> pendingInsertsForConfig =
+        filterPendingInstancesForConfig(config, pendingInserts.stream());
+    Set<String> pendingInsertNamesForConfig =
+        pendingInsertsForConfig
+            .map(pendingInstance -> pendingInstance.getName())
+            .collect(Collectors.toSet());
+
+    Stream<PendingInstanceInsertsAndDeletes.PendingInstance> pendingDeletesForConfig =
+        filterPendingInstancesForConfig(config, pendingDeletes.stream());
+    Set<String> pendingDeleteNamesForConfig =
+        pendingDeletesForConfig
+            .map(pendingInstance -> pendingInstance.getName())
+            .collect(Collectors.toSet());
+
+    Set<String> projectedInstanceNamesForConfig =
+        new HashSet<String>(currentInstanceNamesForConfig);
+    projectedInstanceNamesForConfig.addAll(pendingInsertNamesForConfig);
+    projectedInstanceNamesForConfig.removeAll(pendingDeleteNamesForConfig);
+
+    return projectedInstanceNamesForConfig;
+  }
+
+  public Map<InstanceConfiguration, Integer> getProjectedInstanceCountPerConfig(
+      List<InstanceConfiguration> configs,
+      Set<Instance> allInstances,
+      Set<PendingInstanceInsertsAndDeletes.PendingInstance> pendingInserts,
+      Set<PendingInstanceInsertsAndDeletes.PendingInstance> pendingDeletes) {
+
+    Map<InstanceConfiguration, Integer> instancesPerConfig =
+        new HashMap<InstanceConfiguration, Integer>();
+
+    for (InstanceConfiguration config : configs) {
+      instancesPerConfig.put(
+          config,
+          getProjectedInstanceNamesForConfig(config, allInstances, pendingInserts, pendingDeletes)
+              .size());
+    }
+
+    return instancesPerConfig;
   }
 }

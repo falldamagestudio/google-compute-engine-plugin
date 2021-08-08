@@ -21,10 +21,12 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 
 import com.google.api.services.compute.model.Instance;
+import com.google.common.collect.ImmutableMap;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import org.junit.Rule;
 import org.junit.Test;
@@ -164,22 +166,18 @@ public class InstanceConfigurationPrioritizerTest {
             .maxNumInstancesToCreateStr("2")
             .build();
 
-    Instance instance1 = new Instance();
-    instance1.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix3));
-
-    Instance instance2 = new Instance();
-    instance2.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix2));
-
-    Instance instance3 = new Instance();
-    instance3.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix3));
-
     List<InstanceConfiguration> configs =
         Arrays.asList(new InstanceConfiguration[] {config1, config2, config3});
 
-    List<Instance> instances = Arrays.asList(new Instance[] {instance1, instance2, instance3});
+    Map<InstanceConfiguration, Integer> projectedInstanceCountPerConfig =
+        ImmutableMap.of(
+            config1, 0,
+            config2, 1,
+            config3, 2);
 
     List<InstanceConfiguration> configsWithSpareCapacity =
-        instanceConfigurationPrioritizer.getConfigsWithSpareCapacity(configs, instances);
+        instanceConfigurationPrioritizer.getConfigsWithSpareCapacity(
+            configs, projectedInstanceCountPerConfig);
 
     assertEquals(1, configsWithSpareCapacity.size());
 
@@ -224,6 +222,12 @@ public class InstanceConfigurationPrioritizerTest {
     List<InstanceConfiguration> configs =
         Arrays.asList(new InstanceConfiguration[] {config1, config2, config3});
 
+    Map<InstanceConfiguration, Integer> projectedInstanceCountPerConfig_none =
+        ImmutableMap.of(
+            config1, 0,
+            config2, 0,
+            config3, 0);
+
     List<Instance> instances_config1Only = Arrays.asList(new Instance[] {instance1});
     List<Instance> instances_config3Only = Arrays.asList(new Instance[] {instance2, instance3});
     List<Instance> instances_none = Arrays.asList(new Instance[] {});
@@ -235,7 +239,7 @@ public class InstanceConfigurationPrioritizerTest {
           new InstanceConfigurationPrioritizer();
       InstanceConfigurationPrioritizer.ConfigAndInstance configAndInstance =
           instanceConfigurationPrioritizer.getConfigAndInstance(
-              configs, instances_config1Only, instances_config1Only);
+              configs, instances_config1Only, projectedInstanceCountPerConfig_none);
       assertNotNull(configAndInstance);
       assertEquals(config1, configAndInstance.config);
       assertEquals(instance1, configAndInstance.instance);
@@ -248,7 +252,7 @@ public class InstanceConfigurationPrioritizerTest {
           new InstanceConfigurationPrioritizer();
       InstanceConfigurationPrioritizer.ConfigAndInstance configAndInstance =
           instanceConfigurationPrioritizer.getConfigAndInstance(
-              configs, instances_config3Only, instances_config3Only);
+              configs, instances_config3Only, projectedInstanceCountPerConfig_none);
       assertNotNull(configAndInstance);
       assertEquals(config3, configAndInstance.config);
       assertEquals(instance2, configAndInstance.instance);
@@ -281,19 +285,14 @@ public class InstanceConfigurationPrioritizerTest {
             .maxNumInstancesToCreateStr("2")
             .build();
 
-    Instance instance1 = new Instance();
-    instance1.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix1));
-
-    Instance instance2 = new Instance();
-    instance2.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix3));
-
-    Instance instance3 = new Instance();
-    instance3.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix3));
-
     List<InstanceConfiguration> configs =
         Arrays.asList(new InstanceConfiguration[] {config1, config2, config3});
 
-    List<Instance> instances = Arrays.asList(new Instance[] {instance1, instance2, instance3});
+    Map<InstanceConfiguration, Integer> projectedInstanceCountPerConfig =
+        ImmutableMap.of(
+            config1, 1,
+            config2, 0,
+            config3, 2);
 
     // Prefer config 2 since that is the only config with spare capacity
 
@@ -301,7 +300,7 @@ public class InstanceConfigurationPrioritizerTest {
         new InstanceConfigurationPrioritizer();
     InstanceConfigurationPrioritizer.ConfigAndInstance configAndInstance =
         instanceConfigurationPrioritizer.getConfigAndInstance(
-            configs, instances, new ArrayList<Instance>());
+            configs, new ArrayList<Instance>(), projectedInstanceCountPerConfig);
 
     assertNotNull(configAndInstance);
     assertEquals(config2, configAndInstance.config);
@@ -334,19 +333,14 @@ public class InstanceConfigurationPrioritizerTest {
             .maxNumInstancesToCreateStr("2")
             .build();
 
-    Instance instance1 = new Instance();
-    instance1.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix2));
-
-    Instance instance2 = new Instance();
-    instance2.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix3));
-
-    Instance instance3 = new Instance();
-    instance3.setLabels(Collections.singletonMap(ComputeEngineCloud.CONFIG_LABEL_KEY, namePrefix3));
-
     List<InstanceConfiguration> configs =
         Arrays.asList(new InstanceConfiguration[] {config1, config2, config3});
 
-    List<Instance> instances = Arrays.asList(new Instance[] {instance1, instance2, instance3});
+    Map<InstanceConfiguration, Integer> projectedInstanceCountPerConfig =
+        ImmutableMap.of(
+            config1, 0,
+            config2, 1,
+            config3, 2);
 
     // No configuration is suitable; all are at max capacity, with no provisionable instances
 
@@ -354,7 +348,7 @@ public class InstanceConfigurationPrioritizerTest {
         new InstanceConfigurationPrioritizer();
     InstanceConfigurationPrioritizer.ConfigAndInstance configAndInstance =
         instanceConfigurationPrioritizer.getConfigAndInstance(
-            configs, instances, new ArrayList<Instance>());
+            configs, new ArrayList<Instance>(), projectedInstanceCountPerConfig);
 
     assertNull(configAndInstance);
   }

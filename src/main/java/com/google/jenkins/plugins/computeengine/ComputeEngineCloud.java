@@ -102,6 +102,9 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
   private InstanceConfigurationPrioritizer instanceConfigurationPrioritizer =
       new InstanceConfigurationPrioritizer();
 
+  private PendingInstanceInsertsAndDeletes pendingInstanceInsertsAndDeletes =
+      new PendingInstanceInsertsAndDeletes(this);
+
   @DataBoundConstructor
   public ComputeEngineCloud(
       String cloudName, String projectId, String credentialsId, String instanceCapStr) {
@@ -366,14 +369,23 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
           break;
         }
 
+        pendingInstanceInsertsAndDeletes.refresh();
+        Set<PendingInstanceInsertsAndDeletes.PendingInstance> pendingInserts =
+            pendingInstanceInsertsAndDeletes.getPendingInserts();
+        Set<PendingInstanceInsertsAndDeletes.PendingInstance> pendingDeletes =
+            pendingInstanceInsertsAndDeletes.getPendingDeletes();
+
         Stream<String> allNodes = getAllNodes();
-        List<Instance> allInstances = getAllInstances().collect(Collectors.toList());
+        Set<Instance> allInstances = getAllInstances().collect(Collectors.toSet());
+        Map<InstanceConfiguration, Integer> projectedInstanceCountPerConfig =
+            instanceConfigurationPrioritizer.getProjectedInstanceCountPerConfig(
+                configs, allInstances, pendingInserts, pendingDeletes);
         List<Instance> provisionableInstances =
             filterProvisionableInstances(allNodes, allInstances.stream())
                 .collect(Collectors.toList());
         InstanceConfigurationPrioritizer.ConfigAndInstance configAndInstance =
             instanceConfigurationPrioritizer.getConfigAndInstance(
-                configs, allInstances, provisionableInstances);
+                configs, provisionableInstances, projectedInstanceCountPerConfig);
         logConfigAndInstanceResult(configAndInstance);
 
         if (configAndInstance == null) {
@@ -520,6 +532,10 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
     return instanceConfigurationPrioritizer;
   }
 
+  public PendingInstanceInsertsAndDeletes getPendingInstanceInsertsAndDeletes() {
+    return pendingInstanceInsertsAndDeletes;
+  }
+
   /** Gets {@link InstanceConfiguration} that has the matching Name. */
   public InstanceConfiguration getInstanceConfigurationByName(String name) {
     for (InstanceConfiguration c : configurations) {
@@ -552,13 +568,24 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
       throw HttpResponses.error(SC_BAD_REQUEST, "No such Instance Configuration: " + configuration);
     }
 
+    List<InstanceConfiguration> configs = Arrays.asList(new InstanceConfiguration[] {c});
+
+    pendingInstanceInsertsAndDeletes.refresh();
+    Set<PendingInstanceInsertsAndDeletes.PendingInstance> pendingInserts =
+        pendingInstanceInsertsAndDeletes.getPendingInserts();
+    Set<PendingInstanceInsertsAndDeletes.PendingInstance> pendingDeletes =
+        pendingInstanceInsertsAndDeletes.getPendingDeletes();
+
     Stream<String> allNodes = getAllNodes();
-    List<Instance> allInstances = getAllInstances().collect(Collectors.toList());
+    Set<Instance> allInstances = getAllInstances().collect(Collectors.toSet());
+    Map<InstanceConfiguration, Integer> projectedInstanceCountPerConfig =
+        instanceConfigurationPrioritizer.getProjectedInstanceCountPerConfig(
+            configs, allInstances, pendingInserts, pendingDeletes);
     List<Instance> provisionableInstances =
         filterProvisionableInstances(allNodes, allInstances.stream()).collect(Collectors.toList());
     InstanceConfigurationPrioritizer.ConfigAndInstance configAndInstance =
         instanceConfigurationPrioritizer.getConfigAndInstance(
-            Arrays.asList(new InstanceConfiguration[] {c}), allInstances, provisionableInstances);
+            configs, provisionableInstances, projectedInstanceCountPerConfig);
     logConfigAndInstanceResult(configAndInstance);
 
     if (configAndInstance == null)

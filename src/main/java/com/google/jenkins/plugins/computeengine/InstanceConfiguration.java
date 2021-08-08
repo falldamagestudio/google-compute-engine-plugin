@@ -328,6 +328,11 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
                 .getClient()
                 .insertInstance(cloud.getProjectId(), Optional.ofNullable(template), instance);
         log.info("Sent insert request for instance configuration [" + description + "]");
+        cloud
+            .getPendingInstanceInsertsAndDeletes()
+            .enqueueInsert(
+                new PendingInstanceInsertsAndDeletes.PendingInstance(
+                    instance.getName(), instance.getZone(), namePrefix, operation.getName()));
       } else {
         Compute compute = cloud.getCompute();
         Compute.Instances.Start request =
