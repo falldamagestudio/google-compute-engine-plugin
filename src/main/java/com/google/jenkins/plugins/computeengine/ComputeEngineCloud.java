@@ -331,15 +331,24 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
   // An instance needs to satisfy these conditions to be provisionable:
   // * It must not currently be associated with a node
   // * It must currently have TERMINATED status
+  // * It must not currently have a delete in progress
 
   private Stream<Instance> filterProvisionableInstances(
-      Stream<String> allNodes, Stream<Instance> allInstances) {
+      Stream<String> allNodes,
+      Stream<Instance> allInstances,
+      Stream<InstanceOperationTracker.InstanceOperation> deletesInProgress) {
     Stream<Instance> terminatedInstances = filterTerminatedInstances(allInstances);
 
     Set<String> allNodesSet = allNodes.collect(Collectors.toSet());
+    Set<String> deletesInProgressNamesSet =
+        deletesInProgress
+            .map(instanceOperation -> instanceOperation.getName())
+            .collect(Collectors.toSet());
 
     Stream<Instance> provisionableInstances =
-        terminatedInstances.filter(instance -> !allNodesSet.contains(instance.getName()));
+        terminatedInstances
+            .filter(instance -> !deletesInProgressNamesSet.contains(instance.getName()))
+            .filter(instance -> !allNodesSet.contains(instance.getName()));
 
     return provisionableInstances;
   }
@@ -430,7 +439,8 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
             instanceConfigurationPrioritizer.getProjectedInstanceCountPerConfig(
                 configs, allInstances, insertsInProgress, deletesInProgress);
         List<Instance> provisionableInstances =
-            filterProvisionableInstances(allNodes, allInstances.stream())
+            filterProvisionableInstances(
+                    allNodes, allInstances.stream(), deletesInProgress.stream())
                 .collect(Collectors.toList());
         InstanceConfigurationPrioritizer.ConfigAndInstance configAndInstance =
             instanceConfigurationPrioritizer.getConfigAndInstance(
@@ -657,7 +667,8 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
         instanceConfigurationPrioritizer.getProjectedInstanceCountPerConfig(
             configs, allInstances, insertsInProgress, deletesInProgress);
     List<Instance> provisionableInstances =
-        filterProvisionableInstances(allNodes, allInstances.stream()).collect(Collectors.toList());
+        filterProvisionableInstances(allNodes, allInstances.stream(), deletesInProgress.stream())
+            .collect(Collectors.toList());
     InstanceConfigurationPrioritizer.ConfigAndInstance configAndInstance =
         instanceConfigurationPrioritizer.getConfigAndInstance(
             configs, provisionableInstances, projectedInstanceCountPerConfig);
