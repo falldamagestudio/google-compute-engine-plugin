@@ -321,17 +321,23 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
       Operation operation = null;
       if (instance == null) {
         instance = instance();
+
+        // Ensure that any work on other threads is aware that this instance is scheduled to be
+        // created
+        InstanceOperationTracker.InstanceOperation insertOperation =
+            new InstanceOperationTracker.InstanceOperation(
+                instance.getName(), instance.getZone(), namePrefix, null);
+        cloud.getInstanceInsertOperationTracker().add(insertOperation);
+
         // TODO: JENKINS-55285
         operation =
             cloud
                 .getClient()
                 .insertInstance(cloud.getProjectId(), Optional.ofNullable(template), instance);
         log.info("Sent insert request for instance configuration [" + description + "]");
-        cloud
-            .getInstanceInsertOperationTracker()
-            .add(
-                new InstanceOperationTracker.InstanceOperation(
-                    instance.getName(), instance.getZone(), namePrefix, operation.getName()));
+
+        // Insertion has been scheduled; add operation ID to tracker entry
+        insertOperation.setOperationId(operation.getName());
       } else {
 
         operation =

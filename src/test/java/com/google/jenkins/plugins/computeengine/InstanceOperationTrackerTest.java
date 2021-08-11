@@ -59,6 +59,54 @@ public class InstanceOperationTrackerTest {
   }
 
   @Test
+  public void removesExistingOperations() {
+    InstanceOperationTracker instanceOperationTracker = new InstanceOperationTracker(null);
+
+    InstanceOperationTracker.InstanceOperation instanceOperation1 =
+        new InstanceOperationTracker.InstanceOperation("instance1", "zone1", "prefix1", "1234");
+    InstanceOperationTracker.InstanceOperation instanceOperation2 =
+        new InstanceOperationTracker.InstanceOperation("instance2", "zone2", "prefix2", "5678");
+    InstanceOperationTracker.InstanceOperation instanceOperation3 =
+        new InstanceOperationTracker.InstanceOperation("instance3", "zone3", "prefix3", "abcd");
+
+    instanceOperationTracker.add(instanceOperation1);
+    instanceOperationTracker.add(instanceOperation2);
+    instanceOperationTracker.remove(instanceOperation1);
+
+    Set<InstanceOperationTracker.InstanceOperation> instanceOperations =
+        instanceOperationTracker.get();
+
+    assertEquals(1, instanceOperations.size());
+    assertFalse(instanceOperations.contains(instanceOperation1));
+    assertTrue(instanceOperations.contains(instanceOperation2));
+    assertFalse(instanceOperations.contains(instanceOperation3));
+  }
+
+  @Test
+  public void acceptsRemoveForOperationThatIsNotPartOfTracker() {
+    InstanceOperationTracker instanceOperationTracker = new InstanceOperationTracker(null);
+
+    InstanceOperationTracker.InstanceOperation instanceOperation1 =
+        new InstanceOperationTracker.InstanceOperation("instance1", "zone1", "prefix1", "1234");
+    InstanceOperationTracker.InstanceOperation instanceOperation2 =
+        new InstanceOperationTracker.InstanceOperation("instance2", "zone2", "prefix2", "5678");
+    InstanceOperationTracker.InstanceOperation instanceOperation3 =
+        new InstanceOperationTracker.InstanceOperation("instance3", "zone3", "prefix3", "abcd");
+
+    instanceOperationTracker.add(instanceOperation1);
+    instanceOperationTracker.add(instanceOperation2);
+    instanceOperationTracker.remove(instanceOperation3);
+
+    Set<InstanceOperationTracker.InstanceOperation> instanceOperations =
+        instanceOperationTracker.get();
+
+    assertEquals(2, instanceOperations.size());
+    assertTrue(instanceOperations.contains(instanceOperation1));
+    assertTrue(instanceOperations.contains(instanceOperation2));
+    assertFalse(instanceOperations.contains(instanceOperation3));
+  }
+
+  @Test
   public void removesCompletedOperations() throws Exception {
 
     ComputeEngineCloud cloud = Mockito.mock(ComputeEngineCloud.class);

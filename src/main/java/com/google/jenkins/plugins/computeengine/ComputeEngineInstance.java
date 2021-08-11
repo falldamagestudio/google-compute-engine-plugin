@@ -233,23 +233,26 @@ public class ComputeEngineInstance extends AbstractCloudSlave {
 
       LOGGER.log(Level.INFO, "Deleting instance {0}", new Object[] {name});
 
+      // Ensure that any work on other threads is aware that this instance is scheduled to be
+      // deleted
+      InstanceOperationTracker.InstanceOperation deleteOperation =
+          new InstanceOperationTracker.InstanceOperation(
+              name, zone, instanceConfiguration.getNamePrefix(), null);
+      cloud.getInstanceDeleteOperationTracker().add(deleteOperation);
+
       Operation terminateResponse = null;
       try {
         terminateResponse =
             cloud.getClient().terminateInstanceAsync(cloud.getProjectId(), zone, name);
-        cloud
-            .getInstanceDeleteOperationTracker()
-            .add(
-                new InstanceOperationTracker.InstanceOperation(
-                    name,
-                    zone,
-                    instanceConfiguration.getNamePrefix(),
-                    terminateResponse.getName()));
       } catch (IOException e) {
+        // Deletion failed; cancel tracking of the instance delete operation
+        cloud.getInstanceDeleteOperationTracker().remove(deleteOperation);
         LOGGER.info(
             String.format("Delete failed while issuing operation to complete. IOException"));
         return;
       }
+      // Deletion has been scheduled; add operation ID to tracker entry
+      deleteOperation.setOperationId(terminateResponse.getName());
 
       Operation.Error opError = new Operation.Error();
       try {

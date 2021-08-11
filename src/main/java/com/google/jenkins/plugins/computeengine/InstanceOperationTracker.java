@@ -78,6 +78,10 @@ public class InstanceOperationTracker {
     public String getOperationId() {
       return operationId;
     }
+
+    public void setOperationId(String operationId) {
+      this.operationId = operationId;
+    }
   };
 
   private Set<InstanceOperation> operations = new HashSet<InstanceOperation>();
@@ -95,6 +99,18 @@ public class InstanceOperationTracker {
     log.fine("Instance operation added: " + instanceOperation.getName());
   }
 
+  public void remove(InstanceOperation instanceOperation) {
+    boolean removed = false;
+    synchronized (this) {
+      removed = operations.remove(instanceOperation);
+    }
+    if (removed) {
+      log.fine("Instance operation removed: " + instanceOperation.getName());
+    } else {
+      log.fine("Instance operation was not part of set: " + instanceOperation.getName());
+    }
+  }
+
   protected boolean isZoneOperationDone(String zone, String operation) {
     try {
       return cloud
@@ -108,6 +124,8 @@ public class InstanceOperationTracker {
     }
   }
 
+  // Given a set of operations, return a new set which contains
+  //   only those operations that are not yet done
   private Set<InstanceOperation> removeCompletedOperations(
       Set<InstanceOperation> oldPendingInstances) {
 
@@ -115,13 +133,22 @@ public class InstanceOperationTracker {
         oldPendingInstances.stream()
             .filter(
                 instanceOperation ->
-                    !isZoneOperationDone(
+                    // Keep entries which do not have an operation ID
+                    // Those have just been added to the tracker, and will shortly receive an ID
+                    //  (or be removed manually)
+                    (instanceOperation.getOperationId() == null)
+                    // Keep entries which have IDs, and whose corresponding
+                    //  operations are still marked as not yet done in the GCE backend
+                    || !isZoneOperationDone(
                         instanceOperation.getZone(), instanceOperation.getOperationId()))
             .collect(Collectors.toSet());
 
     return newPendingInstances;
   }
 
+  // Remove any completed operations from the internal set
+  // User code should call this to refresh the status of the internal list, before
+  //  retrieving it
   public void removeCompleted() {
 
     synchronized (this) {
