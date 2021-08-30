@@ -16,6 +16,8 @@
 
 package com.google.jenkins.plugins.computeengine;
 
+import static com.google.cloud.graphite.platforms.plugin.client.util.ClientUtil.nameFromSelfLink;
+
 import java.io.IOException;
 import java.util.HashSet;
 import java.util.List;
@@ -115,7 +117,7 @@ public class InstanceOperationTracker {
     try {
       return cloud
           .getClient2()
-          .getZoneOperation(cloud.getProjectId(), zone, operation)
+          .getZoneOperation(cloud.getProjectId(), nameFromSelfLink(zone), operation)
           .getStatus()
           .equals("DONE");
     } catch (IOException ioException) {
