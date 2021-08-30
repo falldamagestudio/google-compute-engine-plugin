@@ -139,10 +139,10 @@ public class InstanceOperationTracker {
                     // Those have just been added to the tracker, and will shortly receive an ID
                     //  (or be removed manually)
                     (instanceOperation.getOperationId() == null)
-                    // Keep entries which have IDs, and whose corresponding
-                    //  operations are still marked as not yet done in the GCE backend
-                    || !isZoneOperationDone(
-                        instanceOperation.getZone(), instanceOperation.getOperationId()))
+                        // Keep entries which have IDs, and whose corresponding
+                        //  operations are still marked as not yet done in the GCE backend
+                        || !isZoneOperationDone(
+                            instanceOperation.getZone(), instanceOperation.getOperationId()))
             .collect(Collectors.toSet());
 
     return newPendingInstances;

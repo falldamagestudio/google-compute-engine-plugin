@@ -38,6 +38,7 @@ import com.google.api.services.compute.model.Tags;
 import com.google.api.services.compute.model.Zone;
 import com.google.cloud.graphite.platforms.plugin.client.ClientFactory;
 import com.google.cloud.graphite.platforms.plugin.client.ComputeClient;
+import com.google.cloud.graphite.platforms.plugin.client.ComputeClient.OperationException;
 import com.google.common.base.Strings;
 import com.google.jenkins.plugins.computeengine.client.ClientUtil;
 import com.google.jenkins.plugins.computeengine.ssh.GoogleKeyPair;
@@ -89,6 +90,7 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
   public static final String GUEST_ATTRIBUTES_METADATA_KEY = "enable-guest-attributes";
   public static final String SSH_METADATA_KEY = "ssh-keys";
   public static final Long DEFAULT_BOOT_DISK_SIZE_GB = 10L;
+  public static final Long SET_METADATA_OPERATION_TIMEOUT_MS = 10000L;
   public static final Integer DEFAULT_MAX_NUM_INSTANCES_TO_CREATE = 0x7FFFFFFF;
   public static final Integer DEFAULT_MAX_NUM_INSTANCES_TO_PERSIST = 0;
   public static final Integer DEFAULT_NUM_EXECUTORS = 1;
@@ -152,7 +154,6 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
   private boolean createSnapshot;
   private String remoteFs;
   private String javaExecPath;
-  private GoogleKeyPair sshKeyPair;
   private Map<String, String> googleLabels;
   private Integer maxNumInstancesToCreate;
   private Integer maxNumInstancesToPersist;
@@ -316,11 +317,18 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
     googleLabels.put(key, value);
   }
 
-  public ComputeEngineInstance provision(Instance instance) throws IOException {
+  public ComputeEngineInstance provision(Instance instance)
+      throws IOException, InterruptedException, OperationException {
     try {
+      GoogleKeyPair sshKeyPair = null;
       Operation operation = null;
       if (instance == null) {
         instance = instance();
+
+        if (windowsConfiguration == null) {
+          log.fine("Setting SSH key for [" + instance.getName() + "]");
+          sshKeyPair = configureSSHKeyPair(instance, runAsUser);
+        }
 
         // Ensure that any work on other threads is aware that this instance is scheduled to be
         // created
@@ -340,6 +348,11 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
         insertOperation.setOperationId(operation.getName());
       } else {
 
+        if (windowsConfiguration == null) {
+          log.fine("Updating SSH key for [" + instance.getName() + "]");
+          sshKeyPair = updateSSHKeyPair(instance, runAsUser);
+        }
+
         operation =
             cloud
                 .getClient2()
@@ -348,6 +361,7 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
 
         log.info("Sent start request for instance [" + instance.getName() + "]");
       }
+
       String targetRemoteFs = this.remoteFs;
       ComputeEngineComputerLauncher launcher;
       if (this.windowsConfiguration != null) {
@@ -407,10 +421,6 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
     instance.setDescription(description);
     instance.setZone(nameFromSelfLink(zone));
     instance.setMetadata(newMetadata());
-
-    if (windowsConfiguration == null) {
-      sshKeyPair = configureSSHKeyPair(instance, runAsUser);
-    }
 
     if (StringUtils.isNotEmpty(template)) {
       InstanceTemplate instanceTemplate =
@@ -483,6 +493,37 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
         .getMetadata()
         .getItems()
         .add(new Metadata.Items().setKey(SSH_METADATA_KEY).setValue(sshKeyPair.getPublicKey()));
+    return sshKeyPair;
+  }
+
+  // Generate a new SSH key pair;
+  // replace any existing key pairs on the given instance with the new pair's public key
+  // return the key pair
+  //
+  // This will remove any SSH keys for other users than the plugin's user
+
+  private GoogleKeyPair updateSSHKeyPair(Instance instance, String sshUser)
+      throws IOException, InterruptedException, OperationException {
+    GoogleKeyPair sshKeyPair = GoogleKeyPair.generate(sshUser);
+
+    Metadata.Items items =
+        new Metadata.Items().setKey(SSH_METADATA_KEY).setValue(sshKeyPair.getPublicKey());
+    List<Metadata.Items> itemsList = Arrays.asList(new Metadata.Items[] {items});
+
+    Operation operation =
+        cloud
+            .getClient()
+            .appendInstanceMetadataSync(
+                cloud.getProjectId(),
+                nameFromSelfLink(instance.getZone()),
+                instance.getName(),
+                itemsList,
+                SET_METADATA_OPERATION_TIMEOUT_MS);
+
+    if (operation.getError() != null) {
+      throw new OperationException(operation.getError());
+    }
+
     return sshKeyPair;
   }
 

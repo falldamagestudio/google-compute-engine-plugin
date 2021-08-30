@@ -244,14 +244,6 @@ public class InstanceConfigurationTest {
     assertTrue(startupScript.isPresent());
     assertEquals(STARTUP_SCRIPT, startupScript.get());
 
-    Optional<String> sshKey =
-        instance.getMetadata().getItems().stream()
-            .filter(item -> item.getKey().equals(InstanceConfiguration.SSH_METADATA_KEY))
-            .map(item -> item.getValue())
-            .findFirst();
-    assertTrue(sshKey.isPresent());
-    assertFalse(sshKey.get().isEmpty());
-
     Optional<String> guestAttributes =
         instance.getMetadata().getItems().stream()
             .filter(

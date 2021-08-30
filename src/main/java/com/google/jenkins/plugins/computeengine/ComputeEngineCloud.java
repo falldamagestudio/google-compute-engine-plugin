@@ -27,6 +27,7 @@ import com.google.api.services.compute.Compute;
 import com.google.api.services.compute.model.Instance;
 import com.google.cloud.graphite.platforms.plugin.client.ClientFactory;
 import com.google.cloud.graphite.platforms.plugin.client.ComputeClient;
+import com.google.cloud.graphite.platforms.plugin.client.ComputeClient.OperationException;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableMap;
 import com.google.jenkins.plugins.computeengine.client.ClientUtil;
@@ -460,6 +461,10 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
       }
     } catch (IOException ioe) {
       log.log(Level.WARNING, "Error provisioning node", ioe);
+    } catch (InterruptedException ie) {
+      log.log(Level.WARNING, "Timeout while provisioning node", ie);
+    } catch (OperationException oe) {
+      log.log(Level.WARNING, "OperationException while provisioning node", oe);
     } catch (NoConfigurationException nce) {
       log.log(
           Level.WARNING,
@@ -621,7 +626,7 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
 
   @RequirePOST
   public HttpResponse doProvision(@QueryParameter String configuration)
-      throws ServletException, IOException {
+      throws ServletException, IOException, InterruptedException, OperationException {
     checkPermissions(PROVISION);
     if (configuration == null) {
       throw HttpResponses.error(SC_BAD_REQUEST, "The 'configuration' query parameter is missing");
