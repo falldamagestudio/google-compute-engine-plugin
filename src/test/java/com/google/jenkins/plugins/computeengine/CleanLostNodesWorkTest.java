@@ -17,11 +17,12 @@ package com.google.jenkins.plugins.computeengine;
 import static java.util.stream.Stream.of;
 import static org.junit.Assert.assertNotNull;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.anyMap;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyZeroInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import com.google.api.services.compute.Compute;
@@ -91,9 +92,8 @@ public class CleanLostNodesWorkTest {
     when(cloud.getAllNodes()).thenReturn(of(instanceName));
 
     getWorker().doRun();
-    verify(cloud).getAllInstances();
-    verify(cloud).getAllNodes();
-    verifyZeroInteractions(client);
+    verify(client).listInstancesWithLabel(eq(TEST_PROJECT_ID), anyMap());
+    verifyNoMoreInteractions(client);
   }
 
   @Test
@@ -128,8 +128,7 @@ public class CleanLostNodesWorkTest {
     r.jenkins.clouds.add(cloud);
 
     getWorker().doRun();
-    verify(cloud).getAllInstances();
-    verify(cloud).getAllNodes();
-    verifyZeroInteractions(client);
+    verify(client).listInstancesWithLabel(eq(TEST_PROJECT_ID), anyMap());
+    verifyNoMoreInteractions(client);
   }
 }
