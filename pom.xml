@@ -23,7 +23,7 @@
   </parent>
 
   <artifactId>google-compute-engine</artifactId>
-  <version>4.3.12</version>
+  <version>4.3.13</version>
   <packaging>hpi</packaging>
 
   <name>Google Compute Engine Plugin</name>
@@ -58,7 +58,7 @@
     <connection>scm:git:ssh://git@github.com/jenkinsci/google-compute-engine-plugin.git</connection>
     <developerConnection>scm:git:ssh://git@github.com/jenkinsci/google-compute-engine-plugin.git</developerConnection>
     <url>https://github.com/jenkinsci/google-compute-engine-plugin</url>
-    <tag>google-compute-engine-4.3.12</tag>
+    <tag>google-compute-engine-4.3.13</tag>
   </scm>
 
   <properties>
@@ -88,7 +88,7 @@
       <dependency>
         <groupId>io.jenkins.tools.bom</groupId>
         <artifactId>bom-2.346.x</artifactId>
-        <version>1556.vfc6a_f216e3c6</version>
+        <version>1643.v1cffef51df73</version>
         <type>pom</type>
         <scope>import</scope>
       </dependency>
@@ -148,9 +148,8 @@
       <version>0.28.3</version>
     </dependency>
     <dependency>
-      <groupId>org.apache.commons</groupId>
-      <artifactId>commons-text</artifactId>
-      <version>1.9</version>
+      <groupId>io.jenkins.plugins</groupId>
+      <artifactId>commons-text-api</artifactId>
     </dependency>
     <dependency>
       <groupId>commons-io</groupId>
