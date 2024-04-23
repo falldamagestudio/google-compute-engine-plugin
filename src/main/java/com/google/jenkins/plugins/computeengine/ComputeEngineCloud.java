@@ -23,12 +23,16 @@ import com.cloudbees.plugins.credentials.CredentialsProvider;
 import com.cloudbees.plugins.credentials.common.StandardCredentials;
 import com.cloudbees.plugins.credentials.common.StandardListBoxModel;
 import com.cloudbees.plugins.credentials.domains.DomainRequirement;
+import com.google.api.services.compute.Compute;
 import com.google.api.services.compute.model.Instance;
 import com.google.cloud.graphite.platforms.plugin.client.ClientFactory;
 import com.google.cloud.graphite.platforms.plugin.client.ComputeClient;
+import com.google.cloud.graphite.platforms.plugin.client.ComputeClient.OperationException;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableMap;
 import com.google.jenkins.plugins.computeengine.client.ClientUtil;
+import com.google.jenkins.plugins.computeengine.client.ComputeClient2;
+import com.google.jenkins.plugins.computeengine.client.ComputeFactory;
 import com.google.jenkins.plugins.credentials.oauth.GoogleOAuth2Credentials;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.Extension;
@@ -36,6 +40,7 @@ import hudson.model.Computer;
 import hudson.model.Descriptor;
 import hudson.model.Label;
 import hudson.model.Node;
+import hudson.model.Slave;
 import hudson.model.TaskListener;
 import hudson.security.ACL;
 import hudson.security.AccessControlled;
@@ -49,10 +54,12 @@ import hudson.util.ListBoxModel;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -62,6 +69,7 @@ import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 import java.util.logging.SimpleFormatter;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import javax.servlet.ServletException;
 import jenkins.model.Jenkins;
 import lombok.Getter;
@@ -81,7 +89,6 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
     public static final String CLOUD_ID_LABEL_KEY = "jenkins_cloud_id";
 
     private static final SimpleFormatter sf = new SimpleFormatter();
-    private static int configsNext;
 
     private final String projectId;
     private final String credentialsId;
@@ -90,7 +97,15 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
     private List<InstanceConfiguration> configurations;
 
     private transient volatile ComputeClient client;
+    private transient volatile ComputeClient2 client2;
+    private transient volatile Compute compute;
     private boolean noDelayProvisioning;
+
+    private InstanceConfigurationPrioritizer instanceConfigurationPrioritizer = new InstanceConfigurationPrioritizer();
+
+    private InstanceOperationTracker instanceInsertOperationTracker = new InstanceOperationTracker(this);
+
+    private InstanceOperationTracker instanceDeleteOperationTracker = new InstanceOperationTracker(this);
 
     @DataBoundConstructor
     public ComputeEngineCloud(String cloudName, String projectId, String credentialsId, String instanceCapStr) {
@@ -193,6 +208,21 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
         }
     }
 
+    public Compute createCompute() {
+        try {
+            ComputeFactory computeFactory = ClientUtil.getComputeFactory(Jenkins.get(), credentialsId);
+            return computeFactory.compute();
+        } catch (IOException e) {
+            log.log(Level.SEVERE, "Exception when creating GCE compute", e);
+            // TODO: https://github.com/jenkinsci/google-compute-engine-plugin/issues/62
+            return null;
+        }
+    }
+
+    private ComputeClient2 createClient2() {
+        return new ComputeClient2(getCompute());
+    }
+
     /**
      * Returns GCP client for that cloud.
      *
@@ -207,6 +237,38 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
             }
         }
         return client;
+    }
+
+    /**
+     * Returns GCP compute for that cloud.
+     *
+     * @return GCP compute object.
+     */
+    public Compute getCompute() {
+        if (compute == null) {
+            synchronized (this) {
+                if (compute == null) {
+                    compute = createCompute();
+                }
+            }
+        }
+        return compute;
+    }
+
+    /**
+     * Returns GCP client 2 (additional methods) for that cloud.
+     *
+     * @return GCP client 2 object.
+     */
+    public ComputeClient2 getClient2() {
+        if (client2 == null) {
+            synchronized (this) {
+                if (client2 == null) {
+                    client2 = createClient2();
+                }
+            }
+        }
+        return client2;
     }
 
     /**
@@ -234,6 +296,74 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
         readResolve();
     }
 
+    public Stream<String> getAllNodes() {
+        return Jenkins.get().getNodes().stream()
+                .filter(node -> node instanceof ComputeEngineInstance)
+                .map(node -> (ComputeEngineInstance) node)
+                .filter(node -> node.getCloud().equals(this))
+                .map(Slave::getNodeName);
+    }
+
+    // Get all instances associated with a cloud, regardless of their status
+
+    public Stream<Instance> getAllInstances() {
+        Map<String, String> filterLabel = ImmutableMap.of(CLOUD_ID_LABEL_KEY, getInstanceId());
+        try {
+            return getClient().listInstancesWithLabel(getProjectId(), filterLabel).stream();
+        } catch (IOException ex) {
+            log.log(Level.WARNING, "Error finding instances", ex);
+            return Stream.<Instance>empty();
+        }
+    }
+
+    private Stream<Instance> filterTerminatedInstances(Stream<Instance> instances) {
+        return instances.filter(instance -> instance.getStatus().equals("TERMINATED"));
+    }
+
+    // Given a stream of nodes, and a stream of instances,
+    //   identify which of those instances are candidates for being re-used during provisioning
+    //
+    // An instance needs to satisfy these conditions to be provisionable:
+    // * It must not currently be associated with a node
+    // * It must currently have TERMINATED status
+    // * It must not currently have a delete in progress
+
+    private Stream<Instance> filterProvisionableInstances(
+            Stream<String> allNodes,
+            Stream<Instance> allInstances,
+            Stream<InstanceOperationTracker.InstanceOperation> deletesInProgress) {
+        Stream<Instance> terminatedInstances = filterTerminatedInstances(allInstances);
+
+        Set<String> allNodesSet = allNodes.collect(Collectors.toSet());
+        Set<String> deletesInProgressNamesSet = deletesInProgress
+                .map(instanceOperation -> instanceOperation.getName())
+                .collect(Collectors.toSet());
+
+        Stream<Instance> provisionableInstances = terminatedInstances
+                .filter(instance -> !deletesInProgressNamesSet.contains(instance.getName()))
+                .filter(instance -> !allNodesSet.contains(instance.getName()));
+
+        return provisionableInstances;
+    }
+
+    private void logConfigAndInstanceResult(InstanceConfigurationPrioritizer.ConfigAndInstance configAndInstance) {
+        if (configAndInstance != null && configAndInstance.config != null && configAndInstance.instance != null) {
+            log.info(String.format(
+                    "Cloud provider %s - choosing configuration %s and persistent instance %s for provisioning a new node",
+                    getCloudName(), configAndInstance.config.getDisplayName(), configAndInstance.instance.getName()));
+        } else if (configAndInstance != null
+                && configAndInstance.config != null
+                && configAndInstance.instance == null) {
+            log.info(String.format(
+                    "Cloud provider %s - choosing configuration %s but no existing instance for provisioning a new node",
+                    getCloudName(), configAndInstance.config.getDisplayName()));
+        } else if (configAndInstance == null) {
+            log.warning(String.format(
+                    "Could not provision new nodes to meet demand. All instance configurations for cloud provider %s have reached their max num instances",
+                    getCloudName()));
+        }
+    }
+
     @Override
     public Collection<PlannedNode> provision(Label label, int excessWorkload) {
         List<PlannedNode> result = new ArrayList<>();
@@ -257,16 +387,65 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
                     break;
                 }
 
-                InstanceConfiguration config = chooseConfigFromList(configs);
+                instanceInsertOperationTracker.removeCompleted();
+                instanceDeleteOperationTracker.removeCompleted();
+                Set<InstanceOperationTracker.InstanceOperation> insertsInProgress =
+                        instanceInsertOperationTracker.get();
+                Set<InstanceOperationTracker.InstanceOperation> deletesInProgress =
+                        instanceDeleteOperationTracker.get();
 
-                final ComputeEngineInstance node = config.provision();
+                Stream<String> allNodes = getAllNodes();
+                Set<Instance> allInstances = getAllInstances().collect(Collectors.toSet());
+
+                log.log(
+                        Level.FINE,
+                        "When provisioning, the following instances are visible in the GCE APIs: [ "
+                                + String.join(
+                                        ", ",
+                                        allInstances.stream()
+                                                .map(instance -> instance.getName())
+                                                .toArray(String[]::new))
+                                + " ], the following instances have insert operations active: [ "
+                                + String.join(
+                                        ", ",
+                                        insertsInProgress.stream()
+                                                .map(instance -> instance.getName())
+                                                .toArray(String[]::new))
+                                + " ], the following instances have delete operations active: [ "
+                                + String.join(
+                                        ", ",
+                                        deletesInProgress.stream()
+                                                .map(instance -> instance.getName())
+                                                .toArray(String[]::new))
+                                + " ]");
+
+                Map<InstanceConfiguration, Integer> projectedInstanceCountPerConfig =
+                        instanceConfigurationPrioritizer.getProjectedInstanceCountPerConfig(
+                                configs, allInstances, insertsInProgress, deletesInProgress);
+                List<Instance> provisionableInstances = filterProvisionableInstances(
+                                allNodes, allInstances.stream(), deletesInProgress.stream())
+                        .collect(Collectors.toList());
+                InstanceConfigurationPrioritizer.ConfigAndInstance configAndInstance =
+                        instanceConfigurationPrioritizer.getConfigAndInstance(
+                                configs, provisionableInstances, projectedInstanceCountPerConfig);
+                logConfigAndInstanceResult(configAndInstance);
+
+                if (configAndInstance == null) {
+                    break;
+                }
+
+                final ComputeEngineInstance node = configAndInstance.config.provision(configAndInstance.instance);
                 Jenkins.get().addNode(node);
-                result.add(createPlannedNode(config, node));
+                result.add(createPlannedNode(configAndInstance.config, node));
                 excessWorkload -= node.getNumExecutors();
                 availableCapacity -= node.getNumExecutors();
             }
         } catch (IOException ioe) {
             log.log(Level.WARNING, "Error provisioning node", ioe);
+        } catch (InterruptedException ie) {
+            log.log(Level.WARNING, "Timeout while provisioning node", ie);
+        } catch (OperationException oe) {
+            log.log(Level.WARNING, "OperationException while provisioning node", oe);
         } catch (NoConfigurationException nce) {
             log.log(
                     Level.WARNING,
@@ -276,18 +455,6 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
                     nce.getMessage());
         }
         return result;
-    }
-
-    /**
-     * Choose config from list of available configs. Current implementation use round robin strategy
-     * starting at semi random element of list. Because most of times arriving requests asks for only
-     * 1 new node, we don't want to start every time from 1 element.
-     *
-     * @param configs List of configs to choose from.
-     * @return Chosen config from list.
-     */
-    private InstanceConfiguration chooseConfigFromList(List<InstanceConfiguration> configs) {
-        return configs.get(Math.abs(configsNext++) % configs.size());
     }
 
     private PlannedNode createPlannedNode(InstanceConfiguration config, ComputeEngineInstance node) {
@@ -392,6 +559,28 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
         return false;
     }
 
+    public InstanceConfigurationPrioritizer getInstanceConfigurationPrioritizer() {
+        return instanceConfigurationPrioritizer;
+    }
+
+    public InstanceOperationTracker getInstanceInsertOperationTracker() {
+        return instanceInsertOperationTracker;
+    }
+
+    public InstanceOperationTracker getInstanceDeleteOperationTracker() {
+        return instanceDeleteOperationTracker;
+    }
+
+    /** Gets {@link InstanceConfiguration} that has the matching Name. */
+    public InstanceConfiguration getInstanceConfigurationByName(String name) {
+        for (InstanceConfiguration c : configurations) {
+            if (c.getNamePrefix().equals(name)) {
+                return c;
+            }
+        }
+        return null;
+    }
+
     /** Gets {@link InstanceConfiguration} that has the matching Description. */
     public InstanceConfiguration getInstanceConfigurationByDescription(String description) {
         for (InstanceConfiguration c : configurations) {
@@ -403,7 +592,8 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
     }
 
     @RequirePOST
-    public HttpResponse doProvision(@QueryParameter String configuration) throws ServletException, IOException {
+    public HttpResponse doProvision(@QueryParameter String configuration)
+            throws ServletException, IOException, InterruptedException, OperationException {
         checkPermissions(this, PROVISION);
         if (configuration == null) {
             throw HttpResponses.error(SC_BAD_REQUEST, "The 'configuration' query parameter is missing");
@@ -413,7 +603,54 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
             throw HttpResponses.error(SC_BAD_REQUEST, "No such Instance Configuration: " + configuration);
         }
 
-        ComputeEngineInstance node = c.provision();
+        List<InstanceConfiguration> configs = Arrays.asList(new InstanceConfiguration[] {c});
+
+        instanceInsertOperationTracker.removeCompleted();
+        instanceDeleteOperationTracker.removeCompleted();
+        Set<InstanceOperationTracker.InstanceOperation> insertsInProgress = instanceInsertOperationTracker.get();
+        Set<InstanceOperationTracker.InstanceOperation> deletesInProgress = instanceDeleteOperationTracker.get();
+
+        Stream<String> allNodes = getAllNodes();
+        Set<Instance> allInstances = getAllInstances().collect(Collectors.toSet());
+
+        log.log(
+                Level.FINE,
+                "When provisioning, the following instances are visible in the GCE APIs: [ "
+                        + String.join(
+                                ", ",
+                                allInstances.stream()
+                                        .map(instance -> instance.getName())
+                                        .toArray(String[]::new))
+                        + " ], the following instances have insert operations active: [ "
+                        + String.join(
+                                ", ",
+                                insertsInProgress.stream()
+                                        .map(instance -> instance.getName())
+                                        .toArray(String[]::new))
+                        + " ], the following instances have delete operations active: [ "
+                        + String.join(
+                                ", ",
+                                deletesInProgress.stream()
+                                        .map(instance -> instance.getName())
+                                        .toArray(String[]::new))
+                        + " ]");
+
+        Map<InstanceConfiguration, Integer> projectedInstanceCountPerConfig =
+                instanceConfigurationPrioritizer.getProjectedInstanceCountPerConfig(
+                        configs, allInstances, insertsInProgress, deletesInProgress);
+        List<Instance> provisionableInstances = filterProvisionableInstances(
+                        allNodes, allInstances.stream(), deletesInProgress.stream())
+                .collect(Collectors.toList());
+        InstanceConfigurationPrioritizer.ConfigAndInstance configAndInstance =
+                instanceConfigurationPrioritizer.getConfigAndInstance(
+                        configs, provisionableInstances, projectedInstanceCountPerConfig);
+        logConfigAndInstanceResult(configAndInstance);
+
+        if (configAndInstance == null)
+            throw HttpResponses.error(
+                    SC_BAD_REQUEST, "No instance configuration is suitable for provisioning a new node.");
+
+        ComputeEngineInstance node = configAndInstance.config.provision(configAndInstance.instance);
         if (node == null) throw HttpResponses.error(SC_BAD_REQUEST, "Could not provision new node.");
         Jenkins.get().addNode(node);
 

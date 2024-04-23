@@ -16,12 +16,10 @@ package com.google.jenkins.plugins.computeengine;
 
 import static com.google.jenkins.plugins.computeengine.ComputeEngineCloud.checkPermissions;
 
-import com.cloudbees.jenkins.plugins.sshcredentials.impl.BasicSSHUserPrivateKey;
+import com.cloudbees.jenkins.plugins.sshcredentials.SSHUserPrivateKey;
 import com.cloudbees.plugins.credentials.CredentialsMatchers;
 import com.cloudbees.plugins.credentials.CredentialsProvider;
-import com.cloudbees.plugins.credentials.SystemCredentialsProvider;
 import com.cloudbees.plugins.credentials.common.StandardListBoxModel;
-import com.cloudbees.plugins.credentials.common.StandardUsernameCredentials;
 import com.cloudbees.plugins.credentials.common.StandardUsernameListBoxModel;
 import com.cloudbees.plugins.credentials.common.StandardUsernamePasswordCredentials;
 import com.google.common.base.Strings;
@@ -87,13 +85,13 @@ public class WindowsConfiguration implements Describable<WindowsConfiguration>, 
      *
      * @return SSH private key in plain text to use for SSH
      */
-    public StandardUsernameCredentials getPrivateKeyCredentials() {
+    public SSHUserPrivateKey getPrivateKeyCredentials() {
         if (Strings.isNullOrEmpty(privateKeyCredentialsId)) {
             return null;
         }
         return CredentialsMatchers.firstOrNull(
-                new SystemCredentialsProvider.ProviderImpl()
-                        .getCredentials(BasicSSHUserPrivateKey.class, Jenkins.get(), ACL.SYSTEM),
+                CredentialsProvider.lookupCredentials(
+                        SSHUserPrivateKey.class, Jenkins.get(), ACL.SYSTEM, new ArrayList<>()),
                 CredentialsMatchers.withId(privateKeyCredentialsId));
     }
 
@@ -120,9 +118,9 @@ public class WindowsConfiguration implements Describable<WindowsConfiguration>, 
             return new StandardUsernameListBoxModel()
                     .withEmptySelection()
                     .withMatching(
-                            CredentialsMatchers.instanceOf(BasicSSHUserPrivateKey.class),
+                            CredentialsMatchers.instanceOf(SSHUserPrivateKey.class),
                             CredentialsProvider.lookupCredentials(
-                                    StandardUsernameCredentials.class, context, ACL.SYSTEM, new ArrayList<>()));
+                                    SSHUserPrivateKey.class, context, ACL.SYSTEM, new ArrayList<>()));
         }
 
         public FormValidation doCheckPrivateKeyCredentialsId(

@@ -12,53 +12,13 @@
  License.
 -->
 
-[![Build Status](https://ci.jenkins.io/job/Plugins/job/google-compute-engine-plugin/job/master/badge/icon)](https://ci.jenkins.io/job/Plugins/job/google-compute-engine-plugin/job/develop/)
-[![Contributors](https://img.shields.io/github/contributors/jenkinsci/google-compute-engine-plugin.svg)](https://github.com/jenkinsci/google-compute-engine-plugin/graphs/contributors)
-[![Jenkins Plugin](https://img.shields.io/jenkins/plugin/v/google-compute-engine.svg)](https://plugins.jenkins.io/google-compute-engine)
-[![GitHub release](https://img.shields.io/github/v/tag/jenkinsci/google-compute-engine-plugin?label=changelog)](https://github.com/jenkinsci/google-compute-engine-plugin/blob/develop/CHANGELOG.md)
-[![Jenkins Plugin Installs](https://img.shields.io/jenkins/plugin/i/google-compute-engine.svg?color=blue)](https://plugins.jenkins.io/google-compute-engine)
+# GCE Plugin for Jenkins - with persistent VM support
 
-# Google Compute Engine Plugin for Jenkins
-The Google Compute Engine (GCE) Plugin allows you to use GCE virtual machines (VMs) with Jenkins to execute build tasks. GCE VMs provision quickly, are destroyed by Jenkins when idle, and offer Preemptible VMs that run at a much lower price than regular VMs.
+This is a fork of the [Google Compute Engine Plugin for Jenkins](https://github.com/jenkinsci/google-compute-engine-plugin). It adds support for persisting VMs:
 
-## Documentation
-Please see the [Google Compute Engine Plugin](docs/Home.md) docs for complete documentation.
+- When the plugin decides to scale down, it can choose to stop an instance instead of deleting it.
+- Later on, when the plugin decides to scale up, it will prefer to re-use an instance rather than creating a new one.
 
-## Installation
-1. Download the plugin from [here](https://storage.googleapis.com/jenkins-graphite/google-compute-plugin-latest.hpi).
-1. Go to **Manage Jenkins** then **Manage Plugins**.
-1. In the Plugin Manager, click the **Advanced** tab and then **Choose File** under the **Upload Plugin** section.
-1. Choose the Jenkins plugin file downloaded in Step 1.
-1. Click the **Upload** button.
+Stopped instances retain state (intermediate build results, Docker layer cache, ...), allowing for incremental builds, without costing nearly as much as running instances 24/7.
 
-## Plugin Source Build Installation
-See [Plugin Source Build Installation](docs/source_build_installation.md) to build and install from
-source.
-
-## Configuration as Code Support
-Support for [Jenkins Configuration as Code](https://jenkins.io/projects/jcasc/). See the below examples that are already automatically tested:
-
-* [A configuration example](./src/test/resources/com/google/jenkins/plugins/computeengine/configuration-as-code.yml)
-* [Another configuration example with Windows workers](./src/test/resources/com/google/jenkins/plugins/computeengine/integration/configuration-as-code-windows-it.yml)
-
-
-## Feature requests and bug reports
-Please file feature requests and bug reports under [issues](https://github.com/jenkinsci/google-compute-engine-plugin/issues).
-
-**NOTE**: Starting with version 4.0, you will be required to use version 0.9 or higher of the
-[Google OAuth Credentials plugin](https://github.com/jenkinsci/google-oauth-plugin). Version 0.9 of
-the OAuth plugin is still compatible with older versions of this plugin. Please verify you are
-using the correct versions before filing a bug request.
-
-## Community
-
-The GCP Jenkins community uses the **#gcp-jenkins** slack channel on
-[https://googlecloud-community.slack.com](https://googlecloud-community.slack.com)
-to ask questions and share feedback. Invitation link available here:
-[gcp-slack](https://cloud.google.com/community#home-support).
-
-## Contributing
-See [CONTRIBUTING.md](CONTRIBUTING.md)
-
-## License
-See [LICENSE](LICENSE)
+These changes could potentially be folded back into the parent repository. They need to be well tested though; right now, there are edge cases where instances are forgotten about and left behind.

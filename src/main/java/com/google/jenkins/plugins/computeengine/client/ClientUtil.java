@@ -69,6 +69,51 @@ public class ClientUtil {
         return getClientFactory(itemGroup, ImmutableList.of(), credentialsId, Optional.empty());
     }
 
+    /**
+     * Creates a {@link ComputeFactory} for generating the GCP API clients.
+     *
+     * @param itemGroup The Jenkins context to use for retrieving the credentials.
+     * @param domainRequirements A list of domain requirements.
+     * @param credentialsId The ID of the credentials to use for generating clients.
+     * @param transport An {@link Optional} parameter that specifies the {@link HttpTransport} to use.
+     *     A default will be used if unspecified.
+     * @return A {@link ComputeFactory} to get clients.
+     * @throws AbortException If there was an error initializing the ComputeFactory.
+     */
+    public static ComputeFactory getComputeFactory(
+            ItemGroup itemGroup,
+            ImmutableList<DomainRequirement> domainRequirements,
+            String credentialsId,
+            Optional<HttpTransport> transport)
+            throws AbortException {
+        Preconditions.checkNotNull(itemGroup);
+        Preconditions.checkNotNull(domainRequirements);
+        Preconditions.checkArgument(!Strings.isNullOrEmpty(credentialsId));
+        Preconditions.checkNotNull(transport);
+
+        ComputeFactory computeFactory;
+        try {
+            GoogleRobotCredentials robotCreds = getRobotCredentials(itemGroup, domainRequirements, credentialsId);
+            Credential googleCredential = getGoogleCredential(robotCreds);
+            computeFactory = new ComputeFactory(transport, googleCredential, APPLICATION_NAME);
+        } catch (IOException | GeneralSecurityException ex) {
+            throw new AbortException(Messages.ClientFactory_FailedToInitializeHTTPTransport(ex));
+        }
+        return computeFactory;
+    }
+
+    /**
+     * Creates a {@link ComputeFactory} for generating the GCP API clients.
+     *
+     * @param itemGroup The Jenkins context to use for retrieving the credentials.
+     * @param credentialsId The ID of the credentials to use for generating clients.
+     * @return A {@link ComputeFactory} to get clients.
+     * @throws AbortException If there was an error initializing the ComputeFactory.
+     */
+    public static ComputeFactory getComputeFactory(ItemGroup itemGroup, String credentialsId) throws AbortException {
+        return getComputeFactory(itemGroup, ImmutableList.of(), credentialsId, Optional.empty());
+    }
+
     private static GoogleRobotCredentials getRobotCredentials(
             ItemGroup itemGroup, List<DomainRequirement> domainRequirements, String credentialsId)
             throws AbortException {

@@ -318,7 +318,6 @@ public abstract class ComputeEngineComputerLauncher extends ComputerLauncher {
             throw new IllegalArgumentException("A ComputeEngineComputer with no node was provided");
         }
 
-        ComputeClient client = node.getCloud().getClient();
         final long timeout = node.getLaunchTimeoutMillis();
         final long startTime = System.currentTimeMillis();
         Connection conn = null;
@@ -394,11 +393,11 @@ public abstract class ComputeEngineComputerLauncher extends ComputerLauncher {
                     logInfo(computer, listener, "Using HTTP Proxy Configuration");
                 }
 
-                conn.connect(
+                conn.connect(/*
                         (hostname, portNum, serverHostKeyAlgorithm, serverHostKey) -> verifyServerHostKey(
                                 client, computer, listener, instance, serverHostKeyAlgorithm, serverHostKey),
                         SSH_TIMEOUT_MILLIS,
-                        SSH_TIMEOUT_MILLIS);
+                        SSH_TIMEOUT_MILLIS*/ );
                 logInfo(computer, listener, "Connected via SSH.");
                 return conn;
             } catch (IOException e) {

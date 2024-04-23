@@ -16,6 +16,10 @@
 
 package com.google.jenkins.plugins.computeengine;
 
+import static com.google.cloud.graphite.platforms.plugin.client.util.ClientUtil.nameFromSelfLink;
+
+import com.google.api.services.compute.model.Instance;
+import com.google.api.services.compute.model.Operation;
 import com.google.cloud.graphite.platforms.plugin.client.ComputeClient.OperationException;
 import com.google.common.base.Strings;
 import com.google.jenkins.plugins.computeengine.ssh.GoogleKeyCredential;
@@ -29,10 +33,14 @@ import hudson.slaves.AbstractCloudSlave;
 import hudson.slaves.ComputerLauncher;
 import hudson.slaves.RetentionStrategy;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 import jenkins.model.Jenkins;
 import lombok.Builder;
 import lombok.Getter;
@@ -47,6 +55,7 @@ public class ComputeEngineInstance extends AbstractCloudSlave {
     // TODO: https://issues.jenkins-ci.org/browse/JENKINS-55518
     private final String zone;
     private final String cloudName;
+    private final String instanceConfigurationName;
     private final String sshUser;
     private final WindowsConfiguration windowsConfig;
     private final SshConfiguration sshConfig;
@@ -62,6 +71,7 @@ public class ComputeEngineInstance extends AbstractCloudSlave {
     @Builder
     private ComputeEngineInstance(
             String cloudName,
+            String instanceConfigurationName,
             String name,
             String zone,
             String nodeDescription,
@@ -97,6 +107,7 @@ public class ComputeEngineInstance extends AbstractCloudSlave {
         this.launchTimeout = launchTimeout;
         this.zone = zone;
         this.cloudName = cloudName;
+        this.instanceConfigurationName = instanceConfigurationName;
         this.sshUser = sshUser;
         this.windowsConfig = windowsConfig;
         this.sshConfig = sshConfig;
@@ -111,6 +122,142 @@ public class ComputeEngineInstance extends AbstractCloudSlave {
     @Override
     public AbstractCloudComputer createComputer() {
         return new ComputeEngineComputer(this);
+    }
+
+    private void _terminateThreadedWork(Operation stopResponse) {
+
+        // Wait for instance stop operation to complete
+
+        {
+            Operation.Error opError = new Operation.Error();
+            try {
+                LOGGER.log(Level.INFO, "Waiting for stop operation for instance {0} to complete", new Object[] {name});
+                Operation stopResponseFinal =
+                        cloud.getClient().waitForOperationCompletion(cloud.getProjectId(), stopResponse, 600000);
+                opError = stopResponseFinal.getError();
+            } catch (InterruptedException e) {
+                LOGGER.info(String.format("Stop failed while waiting for operation to complete. Interrupted"));
+                return;
+
+            } catch (OperationException e) {
+                opError = e.getError();
+            }
+            if (opError != null) {
+                LOGGER.info(String.format(
+                        "Stop failed while waiting for operation %s to complete. Operation error was %s",
+                        stopResponse, opError.getErrors().get(0).getMessage()));
+                return;
+            }
+        }
+
+        boolean persist = false;
+
+        // If there is a valid instance configuration,
+        //   and the instance configuration allows persisting the same or more than the current number
+        // of
+        //   instances, choose to persist the current instance
+
+        InstanceConfiguration instanceConfiguration = getInstanceConfiguration();
+        if (instanceConfiguration != null) {
+
+            InstanceOperationTracker instanceInsertOperationTracker = cloud.getInstanceInsertOperationTracker();
+            InstanceOperationTracker instanceDeleteOperationTracker = cloud.getInstanceDeleteOperationTracker();
+            instanceInsertOperationTracker.removeCompleted();
+            instanceDeleteOperationTracker.removeCompleted();
+            Set<InstanceOperationTracker.InstanceOperation> insertsInProgress = instanceInsertOperationTracker.get();
+            Set<InstanceOperationTracker.InstanceOperation> deletesInProgress = instanceDeleteOperationTracker.get();
+
+            Set<Instance> allInstances = cloud.getAllInstances().collect(Collectors.toSet());
+
+            String visibleInstancesString = String.join(
+                    ", ",
+                    allInstances.stream().map(instance -> instance.getName()).toArray(String[]::new));
+            String insertsInProgressString = String.join(
+                    ", ",
+                    insertsInProgress.stream()
+                            .map(instance -> instance.getName())
+                            .toArray(String[]::new));
+            String deletesInProgressString = String.join(
+                    ", ",
+                    deletesInProgress.stream()
+                            .map(instance -> instance.getName())
+                            .toArray(String[]::new));
+            LOGGER.fine("When deleting node, the following instances are visible in the GCE APIs: [ "
+                    + visibleInstancesString + " ], the following instances have insert operations active: [ "
+                    + insertsInProgressString + " ], the following instances have delete operations active: [ "
+                    + deletesInProgressString + " ]");
+
+            Map<InstanceConfiguration, Integer> projectedInstanceCountPerConfig =
+                    cloud.getInstanceConfigurationPrioritizer()
+                            .getProjectedInstanceCountPerConfig(
+                                    Arrays.asList(new InstanceConfiguration[] {instanceConfiguration}),
+                                    allInstances,
+                                    insertsInProgress,
+                                    deletesInProgress);
+
+            int maxNumInstancesToPersist = instanceConfiguration.getMaxNumInstancesToPersist();
+            long numInstancesForConfig = projectedInstanceCountPerConfig.get(instanceConfiguration);
+            persist = (maxNumInstancesToPersist >= numInstancesForConfig);
+            LOGGER.log(
+                    Level.INFO,
+                    "Instance configuration " + instanceConfigurationName + " specifies max "
+                            + Integer.toString(maxNumInstancesToPersist) + " instances to persist: there are currently "
+                            + Long.toString(numInstancesForConfig)
+                            + " for that instance configuration; the instance will " + (persist ? "" : "not ")
+                            + "be persisted");
+        } else {
+            LOGGER.log(
+                    Level.INFO,
+                    "Instance configuration " + instanceConfigurationName
+                            + " not found; instance will not be persisted");
+        }
+
+        if (!persist) {
+
+            // This instance should not be persisted. Delete it right away.
+
+            LOGGER.log(Level.INFO, "Deleting instance {0}", new Object[] {name});
+
+            // Ensure that any work on other threads is aware that this instance is scheduled to be
+            // deleted
+            InstanceOperationTracker.InstanceOperation deleteOperation = new InstanceOperationTracker.InstanceOperation(
+                    name, zone, instanceConfiguration.getNamePrefix(), null);
+            cloud.getInstanceDeleteOperationTracker().add(deleteOperation);
+
+            Operation terminateResponse = null;
+            try {
+                terminateResponse = cloud.getClient().terminateInstanceAsync(cloud.getProjectId(), zone, name);
+            } catch (IOException e) {
+                // Deletion failed; cancel tracking of the instance delete operation
+                cloud.getInstanceDeleteOperationTracker().remove(deleteOperation);
+                LOGGER.info(String.format("Delete failed while issuing operation to complete. IOException"));
+                return;
+            }
+            // Deletion has been scheduled; add operation ID to tracker entry
+            deleteOperation.setOperationId(terminateResponse.getName());
+
+            Operation.Error opError = new Operation.Error();
+            try {
+                LOGGER.log(
+                        Level.INFO, "Waiting for delete operation for instance {0} to complete", new Object[] {name});
+                Operation terminateResponseFinal =
+                        cloud.getClient().waitForOperationCompletion(cloud.getProjectId(), terminateResponse, 600000);
+                opError = terminateResponseFinal.getError();
+            } catch (InterruptedException e) {
+                LOGGER.info(String.format("Delete failed while waiting for operation to complete. Interrupted"));
+                return;
+            } catch (OperationException e) {
+                opError = e.getError();
+            }
+            if (opError != null) {
+                LOGGER.info(String.format(
+                        "Delete instance failed while waiting for operation %s to complete. Operation error was %s",
+                        terminateResponse, opError.getErrors().get(0).getMessage()));
+                return;
+            }
+
+            LOGGER.log(Level.INFO, "Deleting instance {0} done", new Object[] {name});
+        }
     }
 
     @Override
@@ -130,13 +277,20 @@ public class ComputeEngineInstance extends AbstractCloudSlave {
                         .createSnapshotSync(cloud.getProjectId(), this.zone, this.getNodeName(), createSnapshotTimeout);
             }
 
-            // If the instance is running, attempt to terminate it. This is an async call and we
-            // return immediately, hoping for the best.
-            cloud.getClient().terminateInstanceAsync(cloud.getProjectId(), zone, name);
+            LOGGER.log(Level.INFO, "Stopping instance {0}", new Object[] {name});
+
+            Operation stopResponse =
+                    cloud.getClient2().stopInstance(cloud.getProjectId(), nameFromSelfLink(zone), name);
+
+            Computer.threadPoolForRemoting.submit(() -> {
+                _terminateThreadedWork(stopResponse);
+            });
         } catch (CloudNotFoundException cnfe) {
             listener.error(cnfe.getMessage());
         } catch (OperationException oe) {
             listener.error(oe.getError().toPrettyString());
+        } catch (IOException e) {
+            listener.error(e.getMessage());
         }
     }
 
@@ -164,6 +318,11 @@ public class ComputeEngineInstance extends AbstractCloudSlave {
             throw new CloudNotFoundException(
                     String.format("Could not find cloud %s in Jenkins configuration", cloudName));
         return cloud;
+    }
+
+    public InstanceConfiguration getInstanceConfiguration() {
+        ComputeEngineCloud cloud = getCloud();
+        return cloud.getInstanceConfigurationByName(instanceConfigurationName);
     }
 
     @Extension
