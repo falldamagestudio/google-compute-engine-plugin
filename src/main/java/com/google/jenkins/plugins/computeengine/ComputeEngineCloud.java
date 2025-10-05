@@ -34,16 +34,16 @@ import com.google.jenkins.plugins.computeengine.client.ClientUtil;
 import com.google.jenkins.plugins.computeengine.client.ComputeClient2;
 import com.google.jenkins.plugins.computeengine.client.ComputeFactory;
 import com.google.jenkins.plugins.credentials.oauth.GoogleOAuth2Credentials;
+import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.Extension;
 import hudson.model.Computer;
 import hudson.model.Descriptor;
-import hudson.model.Item;
-import hudson.model.Job;
 import hudson.model.Label;
 import hudson.model.Node;
 import hudson.model.Slave;
 import hudson.model.TaskListener;
 import hudson.security.ACL;
+import hudson.security.AccessControlled;
 import hudson.security.Permission;
 import hudson.slaves.AbstractCloudImpl;
 import hudson.slaves.Cloud;
@@ -102,14 +102,11 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
   private transient volatile Compute compute;
   private boolean noDelayProvisioning;
 
-  private InstanceConfigurationPrioritizer instanceConfigurationPrioritizer =
-      new InstanceConfigurationPrioritizer();
+  private InstanceConfigurationPrioritizer instanceConfigurationPrioritizer = new InstanceConfigurationPrioritizer();
 
-  private InstanceOperationTracker instanceInsertOperationTracker =
-      new InstanceOperationTracker(this);
+  private InstanceOperationTracker instanceInsertOperationTracker = new InstanceOperationTracker(this);
 
-  private InstanceOperationTracker instanceDeleteOperationTracker =
-      new InstanceOperationTracker(this);
+  private InstanceOperationTracker instanceDeleteOperationTracker = new InstanceOperationTracker(this);
 
   @DataBoundConstructor
   public ComputeEngineCloud(
@@ -146,7 +143,8 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
       Logger logger, Level level, TaskListener listener, String message, Throwable exception) {
     logger.log(level, message, exception);
     if (listener != null) {
-      if (exception != null) message += " Exception: " + exception;
+      if (exception != null)
+        message += " Exception: " + exception;
       LogRecord lr = new LogRecord(level, message);
       PrintStream printStream = listener.getLogger();
       printStream.print(sf.format(lr));
@@ -191,7 +189,9 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
   /**
    * Sets unique ID of that cloud instance.
    *
-   * <p>This ID allows us to find machines from our cloud in GCP. <b>This value should not change
+   * <p>
+   * This ID allows us to find machines from our cloud in GCP. <b>This value
+   * should not change
    * between config reload, or nodes may be lost in GCP side</b>
    */
   @DataBoundSetter
@@ -327,7 +327,8 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
   }
 
   // Given a stream of nodes, and a stream of instances,
-  //   identify which of those instances are candidates for being re-used during provisioning
+  // identify which of those instances are candidates for being re-used during
+  // provisioning
   //
   // An instance needs to satisfy these conditions to be provisionable:
   // * It must not currently be associated with a node
@@ -341,15 +342,13 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
     Stream<Instance> terminatedInstances = filterTerminatedInstances(allInstances);
 
     Set<String> allNodesSet = allNodes.collect(Collectors.toSet());
-    Set<String> deletesInProgressNamesSet =
-        deletesInProgress
-            .map(instanceOperation -> instanceOperation.getName())
-            .collect(Collectors.toSet());
+    Set<String> deletesInProgressNamesSet = deletesInProgress
+        .map(instanceOperation -> instanceOperation.getName())
+        .collect(Collectors.toSet());
 
-    Stream<Instance> provisionableInstances =
-        terminatedInstances
-            .filter(instance -> !deletesInProgressNamesSet.contains(instance.getName()))
-            .filter(instance -> !allNodesSet.contains(instance.getName()));
+    Stream<Instance> provisionableInstances = terminatedInstances
+        .filter(instance -> !deletesInProgressNamesSet.contains(instance.getName()))
+        .filter(instance -> !allNodesSet.contains(instance.getName()));
 
     return provisionableInstances;
   }
@@ -406,10 +405,8 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
 
         instanceInsertOperationTracker.removeCompleted();
         instanceDeleteOperationTracker.removeCompleted();
-        Set<InstanceOperationTracker.InstanceOperation> insertsInProgress =
-            instanceInsertOperationTracker.get();
-        Set<InstanceOperationTracker.InstanceOperation> deletesInProgress =
-            instanceDeleteOperationTracker.get();
+        Set<InstanceOperationTracker.InstanceOperation> insertsInProgress = instanceInsertOperationTracker.get();
+        Set<InstanceOperationTracker.InstanceOperation> deletesInProgress = instanceDeleteOperationTracker.get();
 
         Stream<String> allNodes = getAllNodes();
         Set<Instance> allInstances = getAllInstances().collect(Collectors.toSet());
@@ -436,15 +433,14 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
                         .toArray(String[]::new))
                 + " ]");
 
-        Map<InstanceConfiguration, Integer> projectedInstanceCountPerConfig =
-            instanceConfigurationPrioritizer.getProjectedInstanceCountPerConfig(
+        Map<InstanceConfiguration, Integer> projectedInstanceCountPerConfig = instanceConfigurationPrioritizer
+            .getProjectedInstanceCountPerConfig(
                 configs, allInstances, insertsInProgress, deletesInProgress);
-        List<Instance> provisionableInstances =
-            filterProvisionableInstances(
-                    allNodes, allInstances.stream(), deletesInProgress.stream())
-                .collect(Collectors.toList());
-        InstanceConfigurationPrioritizer.ConfigAndInstance configAndInstance =
-            instanceConfigurationPrioritizer.getConfigAndInstance(
+        List<Instance> provisionableInstances = filterProvisionableInstances(
+            allNodes, allInstances.stream(), deletesInProgress.stream())
+            .collect(Collectors.toList());
+        InstanceConfigurationPrioritizer.ConfigAndInstance configAndInstance = instanceConfigurationPrioritizer
+            .getConfigAndInstance(
                 configs, provisionableInstances, projectedInstanceCountPerConfig);
         logConfigAndInstanceResult(configAndInstance);
 
@@ -452,8 +448,7 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
           break;
         }
 
-        final ComputeEngineInstance node =
-            configAndInstance.config.provision(configAndInstance.instance);
+        final ComputeEngineInstance node = configAndInstance.config.provision(configAndInstance.instance);
         Jenkins.get().addNode(node);
         result.add(createPlannedNode(configAndInstance.config, node));
         excessWorkload -= node.getNumExecutors();
@@ -526,8 +521,7 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
       // We only care about instances that have a label indicating they
       // belong to this cloud
       Map<String, String> filterLabel = ImmutableMap.of(CLOUD_ID_LABEL_KEY, getInstanceId());
-      List<Instance> instances =
-          new ArrayList<>(getClient().listInstancesWithLabel(projectId, filterLabel));
+      List<Instance> instances = new ArrayList<>(getClient().listInstancesWithLabel(projectId, filterLabel));
 
       // Don't count instances that are not running (or starting up)
       Iterator it = instances.iterator();
@@ -561,7 +555,10 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
     }
   }
 
-  /** Gets all instances of {@link InstanceConfiguration} that has the matching {@link Label}. */
+  /**
+   * Gets all instances of {@link InstanceConfiguration} that has the matching
+   * {@link Label}.
+   */
   public List<InstanceConfiguration> getInstanceConfigurations(Label label)
       throws NoConfigurationException {
     if (configurations == null) {
@@ -570,10 +567,9 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
               "Cloud %s does not have any defined instance configurations.", this.getCloudName()));
     }
 
-    List<InstanceConfiguration> configurations =
-        this.configurations.stream()
-            .filter(configuration -> matchesLabel(configuration, label))
-            .collect(Collectors.toList());
+    List<InstanceConfiguration> configurations = this.configurations.stream()
+        .filter(configuration -> matchesLabel(configuration, label))
+        .collect(Collectors.toList());
 
     if (configurations.isEmpty()) {
       throw new NoConfigurationException(
@@ -627,7 +623,7 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
   @RequirePOST
   public HttpResponse doProvision(@QueryParameter String configuration)
       throws ServletException, IOException, InterruptedException, OperationException {
-    checkPermissions(PROVISION);
+    checkPermissions(this, PROVISION);
     if (configuration == null) {
       throw HttpResponses.error(SC_BAD_REQUEST, "The 'configuration' query parameter is missing");
     }
@@ -636,14 +632,12 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
       throw HttpResponses.error(SC_BAD_REQUEST, "No such Instance Configuration: " + configuration);
     }
 
-    List<InstanceConfiguration> configs = Arrays.asList(new InstanceConfiguration[] {c});
+    List<InstanceConfiguration> configs = Arrays.asList(new InstanceConfiguration[] { c });
 
     instanceInsertOperationTracker.removeCompleted();
     instanceDeleteOperationTracker.removeCompleted();
-    Set<InstanceOperationTracker.InstanceOperation> insertsInProgress =
-        instanceInsertOperationTracker.get();
-    Set<InstanceOperationTracker.InstanceOperation> deletesInProgress =
-        instanceDeleteOperationTracker.get();
+    Set<InstanceOperationTracker.InstanceOperation> insertsInProgress = instanceInsertOperationTracker.get();
+    Set<InstanceOperationTracker.InstanceOperation> deletesInProgress = instanceDeleteOperationTracker.get();
 
     Stream<String> allNodes = getAllNodes();
     Set<Instance> allInstances = getAllInstances().collect(Collectors.toSet());
@@ -668,14 +662,14 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
                     .toArray(String[]::new))
             + " ]");
 
-    Map<InstanceConfiguration, Integer> projectedInstanceCountPerConfig =
-        instanceConfigurationPrioritizer.getProjectedInstanceCountPerConfig(
+    Map<InstanceConfiguration, Integer> projectedInstanceCountPerConfig = instanceConfigurationPrioritizer
+        .getProjectedInstanceCountPerConfig(
             configs, allInstances, insertsInProgress, deletesInProgress);
-    List<Instance> provisionableInstances =
-        filterProvisionableInstances(allNodes, allInstances.stream(), deletesInProgress.stream())
-            .collect(Collectors.toList());
-    InstanceConfigurationPrioritizer.ConfigAndInstance configAndInstance =
-        instanceConfigurationPrioritizer.getConfigAndInstance(
+    List<Instance> provisionableInstances = filterProvisionableInstances(allNodes, allInstances.stream(),
+        deletesInProgress.stream())
+        .collect(Collectors.toList());
+    InstanceConfigurationPrioritizer.ConfigAndInstance configAndInstance = instanceConfigurationPrioritizer
+        .getConfigAndInstance(
             configs, provisionableInstances, projectedInstanceCountPerConfig);
     logConfigAndInstanceResult(configAndInstance);
 
@@ -684,7 +678,8 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
           SC_BAD_REQUEST, "No instance configuration is suitable for provisioning a new node.");
 
     ComputeEngineInstance node = configAndInstance.config.provision(configAndInstance.instance);
-    if (node == null) throw HttpResponses.error(SC_BAD_REQUEST, "Could not provision new node.");
+    if (node == null)
+      throw HttpResponses.error(SC_BAD_REQUEST, "Could not provision new node.");
     Jenkins.get().addNode(node);
 
     return HttpResponses.redirectViaContextPath("/computer/" + node.getNodeName());
@@ -693,19 +688,24 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
   /**
    * Ensures the executing user has the specified permissions.
    *
-   * @param permissions The list of permissions to be checked. If empty, defaults to Job.CONFIGURE.
+   * @param context     The context on which to check the permissions, if
+   *                    <code>null</code> defaults
+   *                    to {@link Jenkins} And if {@link Jenkins} is also
+   *                    <code>null</code> then no permission
+   *                    checks will be performed.
+   * @param permissions The list of permissions to be checked. If empty, defaults
+   *                    to Jenkins.ADMINISTER.
    * @throws AccessDeniedException If the user lacks the proper permissions.
+   * @see Jenkins#get()
    */
-  static void checkPermissions(Permission... permissions) {
-    Jenkins jenkins = Jenkins.getInstanceOrNull();
-    if (jenkins != null) {
-      if (permissions.length > 0) {
-        for (Permission permission : permissions) {
-          jenkins.checkPermission(permission);
-        }
-      } else {
-        jenkins.checkPermission(Job.CONFIGURE);
+  static void checkPermissions(@NonNull AccessControlled context, Permission... permissions) {
+
+    if (permissions.length > 0) {
+      for (Permission permission : permissions) {
+        context.checkPermission(permission);
       }
+    } else {
+      context.checkPermission(Jenkins.ADMINISTER);
     }
   }
 
@@ -719,7 +719,6 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
     }
 
     public FormValidation doCheckProjectId(@QueryParameter String value) {
-      checkPermissions();
       if (value == null || value.isEmpty()) {
         return FormValidation.error("Project ID is required");
       }
@@ -728,10 +727,7 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
 
     public ListBoxModel doFillCredentialsIdItems(
         @AncestorInPath Jenkins context, @QueryParameter String value) {
-      checkPermissions();
-      if (context == null || !context.hasPermission(Item.CONFIGURE)) {
-        return new StandardListBoxModel();
-      }
+      checkPermissions(Jenkins.getInstanceOrNull(), Jenkins.ADMINISTER);
 
       List<DomainRequirement> domainRequirements = new ArrayList<DomainRequirement>();
       return new StandardListBoxModel()
@@ -747,8 +743,9 @@ public class ComputeEngineCloud extends AbstractCloudImpl {
         @AncestorInPath Jenkins context,
         @QueryParameter("projectId") String projectId,
         @QueryParameter String value) {
-      checkPermissions();
-      if (value.isEmpty()) return FormValidation.error("No credential selected");
+      checkPermissions(Jenkins.getInstanceOrNull(), Jenkins.ADMINISTER);
+      if (value.isEmpty())
+        return FormValidation.error("No credential selected");
 
       if (projectId.isEmpty())
         return FormValidation.error("Project ID required to validate credential");

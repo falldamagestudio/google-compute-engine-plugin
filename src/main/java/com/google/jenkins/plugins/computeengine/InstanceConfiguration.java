@@ -41,8 +41,11 @@ import com.google.cloud.graphite.platforms.plugin.client.ComputeClient;
 import com.google.cloud.graphite.platforms.plugin.client.ComputeClient.OperationException;
 import com.google.common.base.Strings;
 import com.google.jenkins.plugins.computeengine.client.ClientUtil;
+import com.google.jenkins.plugins.computeengine.ssh.GoogleKeyCredential;
 import com.google.jenkins.plugins.computeengine.ssh.GoogleKeyPair;
+import com.google.jenkins.plugins.computeengine.ssh.GooglePrivateKey;
 import edu.umd.cs.findbugs.annotations.Nullable;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.Extension;
 import hudson.RelativePath;
 import hudson.Util;
@@ -81,8 +84,11 @@ import org.kohsuke.stapler.QueryParameter;
 
 @Getter
 @Setter(onMethod = @__(@DataBoundSetter))
-/* TODO(rzwitserloot/lombok#2050): Prevent duplicate methods called "build" for custom build method
- *   until lombok 1.18.8 is released. */
+/*
+ * TODO(rzwitserloot/lombok#2050): Prevent duplicate methods called "build" for
+ * custom build method
+ * until lombok 1.18.8 is released.
+ */
 @Builder(builderClassName = "Builder", buildMethodName = "notbuild")
 @AllArgsConstructor
 @Log
@@ -95,29 +101,26 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
   public static final Integer DEFAULT_MAX_NUM_INSTANCES_TO_PERSIST = 0;
   public static final Integer DEFAULT_NUM_EXECUTORS = 1;
   public static final Integer DEFAULT_LAUNCH_TIMEOUT_SECONDS = 300;
-  public static final Integer DEFAULT_RETENTION_TIME_MINUTES =
-      (DEFAULT_LAUNCH_TIMEOUT_SECONDS / 60) + 1;
+  public static final Integer DEFAULT_RETENTION_TIME_MINUTES = (DEFAULT_LAUNCH_TIMEOUT_SECONDS / 60) + 1;
   public static final String DEFAULT_RUN_AS_USER = "jenkins";
   public static final String METADATA_LINUX_STARTUP_SCRIPT_KEY = "startup-script";
   public static final String METADATA_WINDOWS_STARTUP_SCRIPT_KEY = "windows-startup-script-ps1";
   public static final String NAT_TYPE = "ONE_TO_ONE_NAT";
   public static final String NAT_NAME = "External NAT";
-  public static final List<String> KNOWN_IMAGE_PROJECTS =
-      Collections.unmodifiableList(
-          new ArrayList<String>() {
-            {
-              add("centos-cloud");
-              add("coreos-cloud");
-              add("cos-cloud");
-              add("debian-cloud");
-              add("rhel-cloud");
-              add("suse-cloud");
-              add("suse-sap-cloud");
-              add("ubuntu-os-cloud");
-              add("windows-cloud");
-              add("windows-sql-cloud");
-            }
-          });
+  public static final List<String> KNOWN_IMAGE_PROJECTS = Collections.unmodifiableList(new ArrayList<String>() {
+    {
+      add("centos-cloud");
+      add("coreos-cloud");
+      add("cos-cloud");
+      add("debian-cloud");
+      add("rhel-cloud");
+      add("suse-cloud");
+      add("suse-sap-cloud");
+      add("ubuntu-os-cloud");
+      add("windows-cloud");
+      add("windows-sql-cloud");
+    }
+  });
 
   private String description;
   private String namePrefix;
@@ -150,10 +153,14 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
   private boolean oneShot;
   private String template;
   // Optional not possible due to serialization requirement
-  @Nullable private WindowsConfiguration windowsConfiguration;
+  @Nullable
+  private WindowsConfiguration windowsConfiguration;
+  @Nullable
+  private SshConfiguration sshConfiguration;
   private boolean createSnapshot;
   private String remoteFs;
   private String javaExecPath;
+  private GoogleKeyCredential sshKeyCredential;
   private Map<String, String> googleLabels;
   private Integer maxNumInstancesToCreate;
   private Integer maxNumInstancesToPersist;
@@ -175,8 +182,7 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
 
     for (Metadata.Items existing : loser) {
       String existingKey = existing.getKey();
-      Metadata.Items duplicate =
-          winner.stream().filter(m -> m.getKey().equals(existingKey)).findFirst().orElse(null);
+      Metadata.Items duplicate = winner.stream().filter(m -> m.getKey().equals(existingKey)).findFirst().orElse(null);
       if (duplicate == null) {
         winner.add(existing);
       } else if (existingKey.equals(SSH_METADATA_KEY)) {
@@ -187,19 +193,18 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
   }
 
   @DataBoundConstructor
-  public InstanceConfiguration() {}
+  public InstanceConfiguration() {
+  }
 
   @DataBoundSetter
   public void setMaxNumInstancesToCreateStr(String maxNumInstancesToCreateStr) {
-    this.maxNumInstancesToCreate =
-        intOrDefault(maxNumInstancesToCreateStr, DEFAULT_MAX_NUM_INSTANCES_TO_CREATE);
+    this.maxNumInstancesToCreate = intOrDefault(maxNumInstancesToCreateStr, DEFAULT_MAX_NUM_INSTANCES_TO_CREATE);
     this.maxNumInstancesToCreateStr = this.maxNumInstancesToCreate.toString();
   }
 
   @DataBoundSetter
   public void setMaxNumInstancesToPersistStr(String maxNumInstancesToPersistStr) {
-    this.maxNumInstancesToPersist =
-        intOrDefault(maxNumInstancesToPersistStr, DEFAULT_MAX_NUM_INSTANCES_TO_PERSIST);
+    this.maxNumInstancesToPersist = intOrDefault(maxNumInstancesToPersistStr, DEFAULT_MAX_NUM_INSTANCES_TO_PERSIST);
     this.maxNumInstancesToPersistStr = this.maxNumInstancesToPersist.toString();
   }
 
@@ -222,15 +227,13 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
 
   @DataBoundSetter
   public void setRetentionTimeMinutesStr(String retentionTimeMinutesStr) {
-    this.retentionTimeMinutes =
-        intOrDefault(retentionTimeMinutesStr, DEFAULT_RETENTION_TIME_MINUTES);
+    this.retentionTimeMinutes = intOrDefault(retentionTimeMinutesStr, DEFAULT_RETENTION_TIME_MINUTES);
     this.retentionTimeMinutesStr = this.retentionTimeMinutes.toString();
   }
 
   @DataBoundSetter
   public void setLaunchTimeoutSecondsStr(String launchTimeoutSecondsStr) {
-    this.launchTimeoutSeconds =
-        intOrDefault(launchTimeoutSecondsStr, DEFAULT_LAUNCH_TIMEOUT_SECONDS);
+    this.launchTimeoutSeconds = intOrDefault(launchTimeoutSecondsStr, DEFAULT_LAUNCH_TIMEOUT_SECONDS);
     this.launchTimeoutSecondsStr = this.launchTimeoutSeconds.toString();
   }
 
@@ -330,18 +333,17 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
           sshKeyPair = configureSSHKeyPair(instance, runAsUser);
         }
 
-        // Ensure that any work on other threads is aware that this instance is scheduled to be
+        // Ensure that any work on other threads is aware that this instance is
+        // scheduled to be
         // created
-        InstanceOperationTracker.InstanceOperation insertOperation =
-            new InstanceOperationTracker.InstanceOperation(
-                instance.getName(), instance.getZone(), namePrefix, null);
+        InstanceOperationTracker.InstanceOperation insertOperation = new InstanceOperationTracker.InstanceOperation(
+            instance.getName(), instance.getZone(), namePrefix, null);
         cloud.getInstanceInsertOperationTracker().add(insertOperation);
 
         // TODO: JENKINS-55285
-        operation =
-            cloud
-                .getClient()
-                .insertInstance(cloud.getProjectId(), Optional.ofNullable(template), instance);
+        operation = cloud
+            .getClient()
+            .insertInstance(cloud.getProjectId(), Optional.ofNullable(template), instance);
         log.info("Sent insert request for instance configuration [" + description + "]");
 
         // Insertion has been scheduled; add operation ID to tracker entry
@@ -353,11 +355,10 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
           sshKeyPair = updateSSHKeyPair(instance, runAsUser);
         }
 
-        operation =
-            cloud
-                .getClient2()
-                .startInstance(
-                    cloud.getProjectId(), nameFromSelfLink(instance.getZone()), instance.getName());
+        operation = cloud
+            .getClient2()
+            .startInstance(
+                cloud.getProjectId(), nameFromSelfLink(instance.getZone()), instance.getName());
 
         log.info("Sent start request for instance [" + instance.getName() + "]");
       }
@@ -365,16 +366,14 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
       String targetRemoteFs = this.remoteFs;
       ComputeEngineComputerLauncher launcher;
       if (this.windowsConfiguration != null) {
-        launcher =
-            new ComputeEngineWindowsLauncher(
-                cloud.getCloudName(), operation, this.useInternalAddress);
+        launcher = new ComputeEngineWindowsLauncher(
+            cloud.getCloudName(), operation, this.useInternalAddress);
         if (Strings.isNullOrEmpty(targetRemoteFs)) {
           targetRemoteFs = "C:\\";
         }
       } else {
-        launcher =
-            new ComputeEngineLinuxLauncher(
-                cloud.getCloudName(), operation, this.useInternalAddress);
+        launcher = new ComputeEngineLinuxLauncher(
+            cloud.getCloudName(), operation, this.useInternalAddress);
         if (Strings.isNullOrEmpty(targetRemoteFs)) {
           targetRemoteFs = "/tmp";
         }
@@ -389,6 +388,7 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
           .sshUser(runAsUser)
           .remoteFS(targetRemoteFs)
           .windowsConfig(windowsConfiguration)
+          .sshConfig(sshConfiguration)
           .createSnapshot(createSnapshot)
           .oneShot(oneShot)
           .ignoreProxy(ignoreProxy)
@@ -399,7 +399,7 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
           .retentionStrategy(new ComputeEngineRetentionStrategy(retentionTimeMinutes, oneShot))
           .launchTimeout(getLaunchTimeoutMillis())
           .javaExecPath(javaExecPath)
-          .sshKeyPair(sshKeyPair)
+          .sshKeyCredential(sshKeyCredential)
           .build();
     } catch (Descriptor.FormException fe) {
       log.log(Level.WARNING, "Error provisioning instance: " + fe.getMessage(), fe);
@@ -409,8 +409,6 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
 
   /** Initializes transient properties */
   protected Object readResolve() {
-    Jenkins.get().checkPermission(Jenkins.RUN_SCRIPTS);
-
     labelSet = Label.parse(labels);
     return this;
   }
@@ -422,18 +420,29 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
     instance.setZone(nameFromSelfLink(zone));
     instance.setMetadata(newMetadata());
 
+    if (windowsConfiguration == null) {
+      if (sshConfiguration != null) {
+        log.info("User selected to use a custom ssh private key");
+        sshKeyCredential = configureSSHPrivateKey(sshConfiguration.getCustomPrivateKeyCredentialsId(), runAsUser);
+      } else {
+        log.info("User selected to use an autogenerated ssh key pair");
+        sshKeyCredential = configureSSHKeyPair(instance, runAsUser);
+      }
+    }
+
     if (StringUtils.isNotEmpty(template)) {
-      InstanceTemplate instanceTemplate =
-          cloud
-              .getClient()
-              .getTemplate(nameFromSelfLink(cloud.getProjectId()), nameFromSelfLink(template));
-      /* Since we have to set the metadata to include the SSH keypair, we need to ensure
-      we include metadata properties which might be set in the template. */
+      InstanceTemplate instanceTemplate = cloud
+          .getClient()
+          .getTemplate(nameFromSelfLink(cloud.getProjectId()), nameFromSelfLink(template));
+      /*
+       * Since we have to set the metadata to include the autogenerated SSH keypair,
+       * we need to ensure we include metadata properties which might be set in the
+       * template.
+       */
       if (instanceTemplate.getProperties() != null
           && instanceTemplate.getProperties().getMetadata() != null
           && instanceTemplate.getProperties().getMetadata().getItems() != null) {
-        List<Metadata.Items> instanceTemplateItems =
-            instanceTemplate.getProperties().getMetadata().getItems();
+        List<Metadata.Items> instanceTemplateItems = instanceTemplate.getProperties().getMetadata().getItems();
         List<Metadata.Items> instanceItems = instance.getMetadata().getItems();
         instance.getMetadata().setItems(mergeMetadataItems(instanceItems, instanceTemplateItems));
       }
@@ -465,9 +474,8 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
   }
 
   private String uniqueName() {
-    char[][] pairs = {{'a', 'z'}, {'0', '9'}};
-    RandomStringGenerator generator =
-        new RandomStringGenerator.Builder().withinRange(pairs).build();
+    char[][] pairs = { { 'a', 'z' }, { '0', '9' } };
+    RandomStringGenerator generator = new RandomStringGenerator.Builder().withinRange(pairs).build();
     String suffix = generator.generate(6);
 
     String prefix = namePrefix;
@@ -487,6 +495,13 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
     return metadata;
   }
 
+  /**
+   * Called when user selects to use autogenerated ssh key pair
+   *
+   * @param instance current instance object
+   * @param sshUser  user selected during configuration of cloud
+   * @return autogenerated ssh key pair
+   */
   private GoogleKeyPair configureSSHKeyPair(Instance instance, String sshUser) {
     GoogleKeyPair sshKeyPair = GoogleKeyPair.generate(sshUser);
     instance
@@ -497,7 +512,8 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
   }
 
   // Generate a new SSH key pair;
-  // replace any existing key pairs on the given instance with the new pair's public key
+  // replace any existing key pairs on the given instance with the new pair's
+  // public key
   // return the key pair
   //
   // This will remove any SSH keys for other users than the plugin's user
@@ -506,25 +522,35 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
       throws IOException, InterruptedException, OperationException {
     GoogleKeyPair sshKeyPair = GoogleKeyPair.generate(sshUser);
 
-    Metadata.Items items =
-        new Metadata.Items().setKey(SSH_METADATA_KEY).setValue(sshKeyPair.getPublicKey());
-    List<Metadata.Items> itemsList = Arrays.asList(new Metadata.Items[] {items});
+    Metadata.Items items = new Metadata.Items().setKey(SSH_METADATA_KEY).setValue(sshKeyPair.getPublicKey());
+    List<Metadata.Items> itemsList = Arrays.asList(new Metadata.Items[] { items });
 
-    Operation operation =
-        cloud
-            .getClient()
-            .appendInstanceMetadataSync(
-                cloud.getProjectId(),
-                nameFromSelfLink(instance.getZone()),
-                instance.getName(),
-                itemsList,
-                SET_METADATA_OPERATION_TIMEOUT_MS);
+    Operation operation = cloud
+        .getClient()
+        .appendInstanceMetadataSync(
+            cloud.getProjectId(),
+            nameFromSelfLink(instance.getZone()),
+            instance.getName(),
+            itemsList,
+            SET_METADATA_OPERATION_TIMEOUT_MS);
 
     if (operation.getError() != null) {
       throw new OperationException(operation.getError());
     }
 
     return sshKeyPair;
+  }
+
+  /**
+   * Called when user selectes to use custom ssh private key
+   *
+   * @param credentialId the name of the private key the user has selected
+   * @param sshUser      user selected during configuration of cloud
+   * @return custom ssh private key
+   */
+  private GooglePrivateKey configureSSHPrivateKey(String credentialId, String sshUser) {
+    GooglePrivateKey sshPrivateKey = GooglePrivateKey.generate(credentialId, sshUser);
+    return sshPrivateKey;
   }
 
   private void configureStartupScript(Instance instance) {
@@ -610,7 +636,7 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
           new ServiceAccount()
               .setEmail(serviceAccountEmail)
               .setScopes(
-                  Arrays.asList(new String[] {"https://www.googleapis.com/auth/cloud-platform"})));
+                  Arrays.asList(new String[] { "https://www.googleapis.com/auth/cloud-platform" })));
       return serviceAccounts;
     } else {
       return null;
@@ -660,6 +686,10 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
           .build();
     }
 
+    public static SshConfiguration defaultSshConfiguration() {
+      return SshConfiguration.builder().customPrivateKeyCredentialsId("").build();
+    }
+
     public static NetworkConfiguration defaultNetworkConfiguration() {
       return new AutofilledNetworkConfiguration();
     }
@@ -678,20 +708,20 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
       String p = super.getHelpFile(fieldName);
       if (p == null) {
         Descriptor d = Jenkins.get().getDescriptor(ComputeEngineInstance.class);
-        if (d != null) p = d.getHelpFile(fieldName);
+        if (d != null)
+          p = d.getHelpFile(fieldName);
       }
       return p;
     }
 
-    public List<NetworkConfiguration.NetworkConfigurationDescriptor>
-        getNetworkConfigurationDescriptors() {
-      List<NetworkConfiguration.NetworkConfigurationDescriptor> d =
-          Jenkins.get().getDescriptorList(NetworkConfiguration.class);
+    public List<NetworkConfiguration.NetworkConfigurationDescriptor> getNetworkConfigurationDescriptors() {
+      List<NetworkConfiguration.NetworkConfigurationDescriptor> d = Jenkins.get()
+          .getDescriptorList(NetworkConfiguration.class);
       // No deprecated regions
       Iterator it = d.iterator();
       while (it.hasNext()) {
-        NetworkConfiguration.NetworkConfigurationDescriptor o =
-            (NetworkConfiguration.NetworkConfigurationDescriptor) it.next();
+        NetworkConfiguration.NetworkConfigurationDescriptor o = (NetworkConfiguration.NetworkConfigurationDescriptor) it
+            .next();
         if (o.clazz.getName().equals("NetworkConfiguration")) {
           it.remove();
         }
@@ -700,7 +730,6 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
     }
 
     public FormValidation doCheckNetworkTags(@QueryParameter String value) {
-      checkPermissions();
       if (value == null || value.isEmpty()) {
         return FormValidation.ok();
       }
@@ -717,7 +746,6 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
     }
 
     public FormValidation doCheckNamePrefix(@QueryParameter String value) {
-      checkPermissions();
       if (value == null || value.isEmpty()) {
         return FormValidation.error("A prefix is required");
       }
@@ -735,7 +763,6 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
     }
 
     public FormValidation doCheckDescription(@QueryParameter String value) {
-      checkPermissions();
       if (value == null || value.isEmpty()) {
         return FormValidation.error("A description is required");
       }
@@ -746,7 +773,7 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
         @AncestorInPath Jenkins context,
         @QueryParameter("projectId") @RelativePath("..") final String projectId,
         @QueryParameter("credentialsId") @RelativePath("..") final String credentialsId) {
-      checkPermissions();
+      checkPermissions(Jenkins.get(), Jenkins.ADMINISTER);
       ListBoxModel items = new ListBoxModel();
       items.add("");
       try {
@@ -768,7 +795,7 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
         @AncestorInPath Jenkins context,
         @QueryParameter("projectId") @RelativePath("..") final String projectId,
         @QueryParameter("credentialsId") @RelativePath("..") final String credentialsId) {
-      checkPermissions();
+      checkPermissions(Jenkins.get(), Jenkins.ADMINISTER);
       ListBoxModel items = new ListBoxModel();
       items.add("");
       try {
@@ -787,8 +814,7 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
     }
 
     public FormValidation doCheckRegion(@QueryParameter String value) {
-      checkPermissions();
-      if (value.equals("")) {
+      if (StringUtils.isEmpty(value)) {
         return FormValidation.error("Please select a region...");
       }
       return FormValidation.ok();
@@ -799,7 +825,7 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
         @QueryParameter("projectId") @RelativePath("..") final String projectId,
         @QueryParameter("region") final String region,
         @QueryParameter("credentialsId") @RelativePath("..") final String credentialsId) {
-      checkPermissions();
+      checkPermissions(Jenkins.get(), Jenkins.ADMINISTER);
       ListBoxModel items = new ListBoxModel();
       items.add("");
       try {
@@ -821,8 +847,7 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
     }
 
     public FormValidation doCheckZone(@QueryParameter String value) {
-      checkPermissions();
-      if (value.equals("")) {
+      if (StringUtils.isEmpty(value)) {
         return FormValidation.error("Please select a zone...");
       }
       return FormValidation.ok();
@@ -833,7 +858,7 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
         @QueryParameter("projectId") @RelativePath("..") final String projectId,
         @QueryParameter("zone") final String zone,
         @QueryParameter("credentialsId") @RelativePath("..") final String credentialsId) {
-      checkPermissions();
+      checkPermissions(Jenkins.get(), Jenkins.ADMINISTER);
       ListBoxModel items = new ListBoxModel();
       items.add("");
       try {
@@ -855,8 +880,7 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
     }
 
     public FormValidation doCheckMachineType(@QueryParameter String value) {
-      checkPermissions();
-      if (value.equals("")) {
+      if (StringUtils.isEmpty(value)) {
         return FormValidation.error("Please select a machine type...");
       }
       return FormValidation.ok();
@@ -867,7 +891,7 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
         @QueryParameter("projectId") @RelativePath("..") final String projectId,
         @QueryParameter("zone") final String zone,
         @QueryParameter("credentialsId") @RelativePath("..") final String credentialsId) {
-      checkPermissions();
+      checkPermissions(Jenkins.get(), Jenkins.ADMINISTER);
       ListBoxModel items = new ListBoxModel();
       items.add("");
       try {
@@ -893,7 +917,7 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
         @QueryParameter("projectId") @RelativePath("..") final String projectId,
         @QueryParameter("zone") String zone,
         @QueryParameter("credentialsId") @RelativePath("..") final String credentialsId) {
-      checkPermissions();
+      checkPermissions(Jenkins.get(), Jenkins.ADMINISTER);
       ListBoxModel items = new ListBoxModel();
       try {
         ComputeClient compute = computeClient(context, credentialsId);
@@ -916,7 +940,7 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
     public ListBoxModel doFillBootDiskSourceImageProjectItems(
         @AncestorInPath Jenkins context,
         @QueryParameter("projectId") @RelativePath("..") final String projectId) {
-      checkPermissions();
+      checkPermissions(Jenkins.get(), Jenkins.ADMINISTER);
       ListBoxModel items = new ListBoxModel();
       items.add("");
       items.add(projectId);
@@ -927,8 +951,7 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
     }
 
     public FormValidation doCheckBootDiskSourceImageProject(@QueryParameter String value) {
-      checkPermissions();
-      if (value.equals("")) {
+      if (StringUtils.isEmpty(value)) {
         return FormValidation.warning("Please select source image project...");
       }
       return FormValidation.ok();
@@ -938,7 +961,7 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
         @AncestorInPath Jenkins context,
         @QueryParameter("bootDiskSourceImageProject") final String projectId,
         @QueryParameter("credentialsId") @RelativePath("..") final String credentialsId) {
-      checkPermissions();
+      checkPermissions(Jenkins.get(), Jenkins.ADMINISTER);
       ListBoxModel items = new ListBoxModel();
       items.add("");
       try {
@@ -959,8 +982,7 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
     }
 
     public FormValidation doCheckBootDiskSourceImageName(@QueryParameter String value) {
-      checkPermissions();
-      if (value.equals("")) {
+      if (StringUtils.isEmpty(value)) {
         return FormValidation.warning("Please select source image...");
       }
       return FormValidation.ok();
@@ -972,15 +994,17 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
         @QueryParameter("bootDiskSourceImageProject") final String projectId,
         @QueryParameter("bootDiskSourceImageName") final String imageName,
         @QueryParameter("credentialsId") @RelativePath("..") final String credentialsId) {
-      checkPermissions();
+      checkPermissions(Jenkins.get(), Jenkins.ADMINISTER);
       if (Strings.isNullOrEmpty(credentialsId)
           || Strings.isNullOrEmpty(projectId)
-          || Strings.isNullOrEmpty(imageName)) return FormValidation.ok();
+          || Strings.isNullOrEmpty(imageName))
+        return FormValidation.ok();
 
       try {
         ComputeClient compute = computeClient(context, credentialsId);
         Image i = compute.getImage(nameFromSelfLink(projectId), nameFromSelfLink(imageName));
-        if (i == null) return FormValidation.error("Could not find image " + imageName);
+        if (i == null)
+          return FormValidation.error("Could not find image " + imageName);
         Long bootDiskSizeGb = Long.parseLong(value);
         if (bootDiskSizeGb < i.getDiskSizeGb()) {
           return FormValidation.error(
@@ -996,7 +1020,6 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
 
     public FormValidation doCheckLabelString(
         @QueryParameter String value, @QueryParameter Node.Mode mode) {
-      checkPermissions();
       if (mode == Node.Mode.EXCLUSIVE && (value == null || value.trim().isEmpty())) {
         return FormValidation.warning(
             "You may want to assign labels to this node;"
@@ -1009,7 +1032,6 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
         @AncestorInPath Jenkins context,
         @QueryParameter boolean value,
         @QueryParameter("oneShot") boolean oneShot) {
-      checkPermissions();
       if (!oneShot && value) {
         return FormValidation.error(Messages.InstanceConfiguration_SnapshotConfigError());
       }
@@ -1020,7 +1042,6 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
         @AncestorInPath Jenkins context,
         @QueryParameter String value,
         @QueryParameter("oneShot") boolean oneShot) {
-      checkPermissions();
       int numExecutors = intOrDefault(value, DEFAULT_NUM_EXECUTORS);
       if (numExecutors < 1) {
         return FormValidation.error(
@@ -1049,6 +1070,7 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
       instanceConfiguration.setLabelString(this.labels);
       instanceConfiguration.setRunAsUser(this.runAsUser);
       instanceConfiguration.setWindowsConfiguration(this.windowsConfiguration);
+      instanceConfiguration.setSshConfiguration(this.sshConfiguration);
       instanceConfiguration.setBootDiskType(this.bootDiskType);
       instanceConfiguration.setBootDiskAutoDelete(this.bootDiskAutoDelete);
       instanceConfiguration.setBootDiskSourceImageName(this.bootDiskSourceImageName);
@@ -1076,7 +1098,9 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
       return instanceConfiguration;
     }
 
-    // Private methods defined to exclude these from the builder and skip Lombok generating them.
+    // Private methods defined to exclude these from the builder and skip Lombok
+    // generating them.
+    @SuppressFBWarnings(value = "UPM_UNCALLED_PRIVATE_METHOD", justification = "for Lombok")
     private Builder numExecutors(Integer numExecutors) {
       throw new NotImplementedException();
     }
