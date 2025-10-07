@@ -1,9 +1,11 @@
 package com.google.jenkins.plugins.computeengine.client;
 
+
 import com.google.api.services.compute.Compute;
 import com.google.api.services.compute.model.Instance;
 import com.google.api.services.compute.model.InstancesScopedList;
 import com.google.api.services.compute.model.InstancesSetLabelsRequest;
+import com.google.api.services.compute.model.Operation;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
@@ -80,5 +82,24 @@ public class ComputeClientV2 {
                 .filter(Objects::nonNull)
                 .flatMap(List::stream)
                 .collect(Collectors.toList());
+    }
+
+    public Operation startInstance(String project, String zone, String name) throws IOException {
+        Compute.Instances.Start request = compute.instances().start(project, zone, name);
+        Operation operation = request.execute();
+        return operation;
+    }
+
+    public Operation stopInstance(String project, String zone, String name) throws IOException {
+        Compute.Instances.Stop request = compute.instances().stop(project, zone, name);
+        Operation operation = request.execute();
+        return operation;
+    }
+
+    public Operation getZoneOperation(String project, String zone, String operation)
+            throws IOException {
+        Compute.ZoneOperations.Get request = compute.zoneOperations().get(project, zone, operation);
+        Operation response = request.execute();
+        return response;
     }
 }

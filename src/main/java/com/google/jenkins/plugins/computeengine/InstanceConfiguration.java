@@ -37,6 +37,7 @@ import com.google.api.services.compute.model.Tags;
 import com.google.api.services.compute.model.Zone;
 import com.google.cloud.graphite.platforms.plugin.client.ClientFactory;
 import com.google.cloud.graphite.platforms.plugin.client.ComputeClient;
+import com.google.cloud.graphite.platforms.plugin.client.ComputeClient.OperationException;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Strings;
 import com.google.jenkins.plugins.computeengine.client.ClientUtil;
@@ -70,6 +71,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.logging.Level;
+import java.security.GeneralSecurityException;
 import jenkins.model.Jenkins;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -96,6 +98,9 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
     public static final String GUEST_ATTRIBUTES_METADATA_KEY = "enable-guest-attributes";
     public static final String SSH_METADATA_KEY = "ssh-keys";
     public static final Long DEFAULT_BOOT_DISK_SIZE_GB = 10L;
+    public static final Long SET_METADATA_OPERATION_TIMEOUT_MS = 10000L;
+    public static final Integer DEFAULT_MAX_NUM_INSTANCES_TO_CREATE = 0x7FFFFFFF;
+    public static final Integer DEFAULT_MAX_NUM_INSTANCES_TO_PERSIST = 0;
     public static final Integer DEFAULT_NUM_EXECUTORS = 1;
     public static final Integer DEFAULT_LAUNCH_TIMEOUT_SECONDS = 300;
     public static final Integer DEFAULT_RETENTION_TIME_MINUTES = (DEFAULT_LAUNCH_TIMEOUT_SECONDS / 60) + 1;
@@ -119,6 +124,8 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
     private String region;
     private String zone;
     private String machineType;
+    private String maxNumInstancesToCreateStr;
+    private String maxNumInstancesToPersistStr;
     private String numExecutorsStr;
     private String startupScript;
     private ProvisioningType provisioningType;
@@ -158,6 +165,8 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
     private String javaExecPath;
     private GoogleKeyCredential sshKeyCredential;
     private Map<String, String> googleLabels;
+    private Integer maxNumInstancesToCreate;
+    private Integer maxNumInstancesToPersist;
     private Integer numExecutors;
     private Integer retentionTimeMinutes;
     private Integer launchTimeoutSeconds;
@@ -195,6 +204,18 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
 
     @DataBoundConstructor
     public InstanceConfiguration() {}
+
+    @DataBoundSetter
+    public void setMaxNumInstancesToCreateStr(String maxNumInstancesToCreateStr) {
+      this.maxNumInstancesToCreate = intOrDefault(maxNumInstancesToCreateStr, DEFAULT_MAX_NUM_INSTANCES_TO_CREATE);
+      this.maxNumInstancesToCreateStr = this.maxNumInstancesToCreate.toString();
+    }
+
+    @DataBoundSetter
+    public void setMaxNumInstancesToPersistStr(String maxNumInstancesToPersistStr) {
+      this.maxNumInstancesToPersist = intOrDefault(maxNumInstancesToPersistStr, DEFAULT_MAX_NUM_INSTANCES_TO_PERSIST);
+      this.maxNumInstancesToPersistStr = this.maxNumInstancesToPersist.toString();
+    }
 
     @DataBoundSetter
     public void setNumExecutorsStr(String numExecutorsStr) {
@@ -326,13 +347,52 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
         googleLabels.put(key, value);
     }
 
-    public ComputeEngineInstance provision() throws IOException {
+    public ComputeEngineInstance provision(Instance instance)
+        throws IOException, InterruptedException, OperationException, GeneralSecurityException {
         try {
-            Instance instance = instance();
-            // TODO: JENKINS-55285
-            Operation operation =
-                    cloud.getClient().insertInstance(cloud.getProjectId(), Optional.ofNullable(template), instance);
-            log.info("Sent insert request for instance configuration [" + description + "]");
+            Operation operation = null;
+            if (instance == null) {
+                instance = instance();
+
+                // Ensure that any work on other threads is aware that this instance is scheduled to be created
+                InstanceOperationTracker.InstanceOperation trackedInsertOperation = new InstanceOperationTracker.InstanceOperation(instance.getName(), instance.getZone(), namePrefix, null);
+                cloud.getInstanceInsertOperationTracker().add(trackedInsertOperation);
+
+                try {
+                    operation = cloud.getClient().insertInstance(cloud.getProjectId(), Optional.ofNullable(template), instance);
+                } catch (IOException ioException) {
+                    // Insert failed; cancel tracking of the instance insert operation
+                    cloud.getInstanceInsertOperationTracker().remove(trackedInsertOperation);
+
+                    log.log(Level.SEVERE, String.format("Provisioning a new instance failed: insert instance request failed: " + ioException.getMessage()), ioException);
+                    return null;
+                }
+
+                log.info("Sent insert request (create a new instance) for instance configuration [" + description + "]");
+
+                // Insertion has been scheduled; add operation ID to tracker entry
+                trackedInsertOperation.setOperationId(operation.getName());
+
+            } else {
+
+                if (windowsConfiguration == null) {
+                    if (sshConfiguration == null) {
+                        log.fine("Generating a new SSH key for [" + instance.getName() + "]");
+                        sshKeyCredential = updateSSHKeyPair(instance, runAsUser);
+                    }
+                }
+
+                try {
+                    operation = cloud.getClientV2().startInstance(cloud.getProjectId(), nameFromSelfLink(instance.getZone()), instance.getName());
+                } catch (IOException ioException) {
+                    // Start failed
+                    log.log(Level.SEVERE, String.format("Reprovisioning an existing instance failed: start instance request failed: " + ioException.getMessage()), ioException);
+                    return null;
+                }
+
+                log.info("Sent start request (start an existing but stopped instance) for instance [" + instance.getName() + "]");
+            }
+
             String targetRemoteFs = this.remoteFs;
             ComputeEngineComputerLauncher launcher;
             if (this.windowsConfiguration != null) {
@@ -349,6 +409,7 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
             return ComputeEngineInstance.builder()
                     .cloud(cloud)
                     .cloudName(cloud.name)
+                    .instanceConfigurationName(namePrefix)
                     .name(instance.getName())
                     .zone(instance.getZone())
                     .nodeDescription(instance.getDescription())
@@ -502,6 +563,35 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
         return sshPrivateKey;
     }
 
+    // Generate a new SSH key pair;
+    // replace any existing key pairs on the given instance with the new pair's public key
+    // return the key pair
+    //
+    // This will remove any SSH keys for other users than the plugin's user
+
+    private GoogleKeyPair updateSSHKeyPair(Instance instance, String sshUser)
+            throws IOException, InterruptedException, OperationException {
+        GoogleKeyPair sshKeyPair = GoogleKeyPair.generate(sshUser);
+
+        Metadata.Items items = new Metadata.Items().setKey(SSH_METADATA_KEY).setValue(sshKeyPair.getPublicKey());
+        List<Metadata.Items> itemsList = Arrays.asList(new Metadata.Items[] { items });
+
+        Operation operation = cloud
+                .getClient()
+                .appendInstanceMetadataSync(
+                        cloud.getProjectId(),
+                        nameFromSelfLink(instance.getZone()),
+                        instance.getName(),
+                        itemsList,
+                        SET_METADATA_OPERATION_TIMEOUT_MS);
+
+        if (operation.getError() != null) {
+            throw new OperationException(operation.getError());
+        }
+
+        return sshKeyPair;
+    }
+
     private void configureStartupScript(Instance instance) {
         if (notNullOrEmpty(startupScript)) {
             List<Metadata.Items> items = instance.getMetadata().getItems();
@@ -517,6 +607,14 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
         }
     }
 
+    public static String defaultMaxNumInstancesToCreate() {
+        return DEFAULT_MAX_NUM_INSTANCES_TO_CREATE.toString();
+    }
+
+    public static String defaultMaxNumInstancesToPersist() {
+        return DEFAULT_MAX_NUM_INSTANCES_TO_PERSIST.toString();
+    }
+    
     private Tags tags() {
         if (notNullOrEmpty(networkTags)) {
             Tags tags = new Tags();
@@ -1000,6 +1098,8 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
             instanceConfiguration.setRegion(this.region);
             instanceConfiguration.setZone(this.zone);
             instanceConfiguration.setMachineType(this.machineType);
+            instanceConfiguration.setMaxNumInstancesToCreateStr(this.maxNumInstancesToCreateStr);
+            instanceConfiguration.setMaxNumInstancesToPersistStr(this.maxNumInstancesToPersistStr);
             instanceConfiguration.setNumExecutorsStr(this.numExecutorsStr);
             instanceConfiguration.setStartupScript(this.startupScript);
             instanceConfiguration.setProvisioningType(this.provisioningType);
@@ -1033,6 +1133,15 @@ public class InstanceConfiguration implements Describable<InstanceConfiguration>
                 instanceConfiguration.appendLabels(this.googleLabels);
             }
             return instanceConfiguration;
+        }
+
+
+        private Builder maxNumInstancesToCreate(Integer maxNumInstancesToCreate) {
+            throw new NotImplementedException();
+        }
+
+        private Builder maxNumInstancesToPersist(Integer maxNumInstancesToPersist) {
+            throw new NotImplementedException();
         }
 
         // Private methods defined to exclude these from the builder and skip Lombok generating them.
